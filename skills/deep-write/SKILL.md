@@ -24,12 +24,6 @@ The core idea: a first draft is an experiment. Each revision pass has a specific
 - **humanizer** runs as a final pass before presenting any draft.
 - **wiki** is your research base. Always check it before writing.
 
-## Reference Files
-
-- `references/quality-rubric.md` — The 10 dimensions that distinguish a great article. Every revision pass scores against this.
-- `references/revision-lenses.md` — The specific lenses for each revision pass in the loop.
-
-Onboard seeds the rubric's reference examples from the person's own favorites and representative posts in their space. Re-run onboard to refresh calibration.
 
 ## The Process
 

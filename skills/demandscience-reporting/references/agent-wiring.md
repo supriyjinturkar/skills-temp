@@ -20,7 +20,7 @@ Responsibility:
 - resolve `template_key`
 - delegate execution to the DemandScience customer agent
 - manage SDM review and final delivery steps
-- ensure the generated draft is sent to the configured review delivery emails through `messaging.send_review_email` when SDM review is required
+- ensure the generated draft is sent to the configured review delivery emails through `messaging_send_review_email` when SDM review is required
 
 ## Customer agent
 

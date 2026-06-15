@@ -1,0 +1,507 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{report_title}}</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+    <style>
+      :root {
+        --ink: #12263a;
+        --ink-soft: #37556d;
+        --surface: #ffffff;
+        --paper: #f7f6f2;
+        --line: #d7e0e7;
+        --shadow: 0 18px 48px rgba(18, 38, 58, 0.12);
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        font-family: "Aptos", "Segoe UI", Tahoma, sans-serif;
+        background: linear-gradient(180deg, #ece8df 0%, var(--paper) 34%, #fcfbf8 100%);
+        color: var(--ink);
+      }
+
+      .page {
+        max-width: 1460px;
+        margin: 0 auto;
+        padding: 28px;
+      }
+
+      .masthead {
+        display: grid;
+        grid-template-columns: 1.45fr 0.95fr;
+        gap: 18px;
+        margin-bottom: 22px;
+      }
+
+      .title-panel,
+      .summary-panel,
+      .panel,
+      .table-card,
+      .note {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        box-shadow: var(--shadow);
+      }
+
+      .title-panel {
+        padding: 28px;
+        background: linear-gradient(160deg, rgba(18, 38, 58, 0.98), rgba(55, 85, 109, 0.92));
+        color: #ffffff;
+        border: none;
+      }
+
+      .title-panel h1 {
+        margin: 14px 0 10px;
+        font-size: clamp(34px, 5vw, 48px);
+        line-height: 1;
+        letter-spacing: -0.04em;
+      }
+
+      .title-panel p {
+        margin: 0;
+        line-height: 1.6;
+        color: rgba(255,255,255,0.86);
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 14px;
+        border-radius: 999px;
+        font-size: 12px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        background: rgba(255, 255, 255, 0.08);
+        color: rgba(255, 255, 255, 0.78);
+      }
+
+      .summary-panel {
+        padding: 24px;
+        display: grid;
+        gap: 14px;
+      }
+
+      .summary-label {
+        color: var(--ink-soft);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        font-size: 11px;
+      }
+
+      .summary-big {
+        margin-top: 8px;
+        font-size: 32px;
+        font-weight: 800;
+        color: var(--ink);
+      }
+
+      .summary-list {
+        display: grid;
+        gap: 10px;
+      }
+
+      .summary-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        padding-bottom: 10px;
+        border-bottom: 1px solid var(--line);
+        font-size: 14px;
+      }
+
+      .summary-row:last-child {
+        border-bottom: 0;
+        padding-bottom: 0;
+      }
+
+      .score-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 16px;
+        margin-bottom: 22px;
+      }
+
+      .score-card {
+        background: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(243,247,250,0.98));
+        border: 1px solid rgba(55, 85, 109, 0.12);
+        border-radius: 22px;
+        padding: 20px;
+        box-shadow: var(--shadow);
+      }
+
+      .score-card .label {
+        color: var(--ink-soft);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        font-size: 11px;
+      }
+
+      .score-card .value {
+        margin-top: 10px;
+        font-size: 34px;
+        line-height: 1;
+        font-weight: 800;
+      }
+
+      .score-card .subtext {
+        margin-top: 8px;
+        color: var(--ink-soft);
+        font-size: 13px;
+      }
+
+      .section-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 16px;
+        margin: 26px 0 14px;
+      }
+
+      .section-head h2 {
+        margin: 0;
+        font-size: 24px;
+        letter-spacing: -0.03em;
+      }
+
+      .section-head p {
+        margin: 0;
+        color: var(--ink-soft);
+        font-size: 14px;
+      }
+
+      .grid {
+        display: grid;
+        gap: 18px;
+      }
+
+      .grid.two {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .panel,
+      .table-card {
+        padding: 18px 18px 12px;
+      }
+
+      .panel h3,
+      .table-card h3 {
+        margin: 0 0 4px;
+        font-size: 16px;
+      }
+
+      .panel p,
+      .table-card p {
+        margin: 0 0 14px;
+        color: var(--ink-soft);
+        font-size: 13px;
+        line-height: 1.55;
+      }
+
+      .chart {
+        width: 100%;
+        height: 320px;
+      }
+
+      .notes {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+        margin-top: 18px;
+      }
+
+      .note {
+        padding: 18px;
+      }
+
+      .note h4 {
+        margin: 0 0 8px;
+        font-size: 14px;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+        color: var(--ink-soft);
+      }
+
+      .note p,
+      .note li {
+        font-size: 14px;
+        line-height: 1.6;
+      }
+
+      .note ul {
+        margin: 0;
+        padding-left: 18px;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 14px;
+      }
+
+      th,
+      td {
+        text-align: left;
+        padding: 10px 8px;
+        border-bottom: 1px solid var(--line);
+        vertical-align: top;
+      }
+
+      th {
+        color: var(--ink-soft);
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        font-size: 11px;
+      }
+
+      .footer {
+        margin-top: 24px;
+        padding: 14px 2px 26px;
+        color: var(--ink-soft);
+        font-size: 13px;
+      }
+
+      @media (max-width: 1180px) {
+        .masthead,
+        .grid.two,
+        .notes,
+        .score-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <section class="masthead">
+        <article class="title-panel">
+          <div class="eyebrow">Nexon | DemandScience | Weekly Template B</div>
+          <h1>{{report_title}}</h1>
+          <p>{{executive_summary}}</p>
+        </article>
+        <article class="summary-panel">
+          <div>
+            <div class="summary-label">Monitoring Coverage</div>
+            <div class="summary-big">{{coverage_percent}}</div>
+          </div>
+          <div class="summary-list">
+            <div class="summary-row"><span>Reporting Period</span><strong>{{period_label}}</strong></div>
+            <div class="summary-row"><span>Monitored Devices</span><strong>{{monitored_devices}}</strong></div>
+            <div class="summary-row"><span>Unmonitored Devices</span><strong>{{unmonitored_devices}}</strong></div>
+            <div class="summary-row"><span>State</span><strong>{{review_state}}</strong></div>
+          </div>
+        </article>
+      </section>
+
+      <section class="score-grid">
+        <article class="score-card">
+          <div class="label">Opened Alerts</div>
+          <div class="value">{{opened_alerts}}</div>
+          <div class="subtext">{{opened_alerts_subtext}}</div>
+        </article>
+        <article class="score-card">
+          <div class="label">Active Alerts</div>
+          <div class="value">{{active_alerts}}</div>
+          <div class="subtext">{{active_alerts_subtext}}</div>
+        </article>
+        <article class="score-card">
+          <div class="label">Sites in Scope</div>
+          <div class="value">{{site_count}}</div>
+          <div class="subtext">{{site_count_subtext}}</div>
+        </article>
+        <article class="score-card">
+          <div class="label">Availability</div>
+          <div class="value">{{availability_percent}}</div>
+          <div class="subtext">{{availability_subtext}}</div>
+        </article>
+      </section>
+
+      <div class="section-head">
+        <h2>Site and Coverage View</h2>
+        <p>Template B emphasizes site-level operating context and customer-facing review notes.</p>
+      </div>
+      <section class="grid two">
+        <article class="panel">
+          <h3>Site Operations Overview</h3>
+          <p>{{site_operations_summary}}</p>
+          <div class="chart" id="siteCoverageChart"></div>
+        </article>
+        <article class="panel">
+          <h3>Alert Trend and Active Load</h3>
+          <p>{{alert_trend_summary}}</p>
+          <div class="chart" id="alertTrendChart"></div>
+        </article>
+      </section>
+
+      <div class="section-head">
+        <h2>Review Tables</h2>
+        <p>Template B keeps strong operational evidence alongside the SDM commentary layer.</p>
+      </div>
+      <section class="grid two">
+        <article class="table-card">
+          <h3>Top Sites</h3>
+          <p>Top sites by device count and cleared alert volume.</p>
+          <table>
+            <thead>
+              <tr>
+                <th>Site</th>
+                <th>Devices</th>
+                <th>Cleared Alerts</th>
+              </tr>
+            </thead>
+            <tbody>
+              {{site_rows_html}}
+            </tbody>
+          </table>
+        </article>
+        <article class="table-card">
+          <h3>Top Alerting Resources</h3>
+          <p>Resources most likely to require SDM commentary or follow-up.</p>
+          <table>
+            <thead>
+              <tr>
+                <th>Resource</th>
+                <th>Alerts</th>
+                <th>Comment</th>
+              </tr>
+            </thead>
+            <tbody>
+              {{top_resources_rows_html}}
+            </tbody>
+          </table>
+        </article>
+      </section>
+
+      <section class="notes">
+        <article class="note">
+          <h4>SDM Commentary</h4>
+          <p>{{sdm_commentary}}</p>
+        </article>
+        <article class="note">
+          <h4>Actions</h4>
+          <p>{{actions_summary}}</p>
+        </article>
+      </section>
+
+      <div class="footer">
+        Generated by Nexon Fleet demo for DemandScience weekly template B<br />
+        State: {{review_state}}
+      </div>
+    </main>
+
+    <script>
+      const reportData = {
+        siteOperations: {{site_operations_json}},
+        alertDailyFlow: {{alert_daily_flow_json}}
+      };
+
+      const text = "#274154";
+      const muted = "#6d8190";
+      const grid = "#dfe5ea";
+      const axis = "#8094a3";
+      const palette = ["#0f8b8d", "#4f7cac", "#da8b2f", "#cf5c47", "#8267be", "#5a7f62"];
+
+      const common = {
+        textStyle: {
+          fontFamily: "Aptos, Segoe UI, Tahoma, sans-serif",
+          color: text,
+        },
+        color: palette,
+        animationDuration: 700,
+      };
+
+      function truncateLabel(value, max = 16) {
+        const textValue = String(value ?? "");
+        return textValue.length > max ? `${textValue.slice(0, max - 1)}…` : textValue;
+      }
+
+      function chart(id) {
+        const node = document.getElementById(id);
+        if (!node || typeof echarts === "undefined") {
+          return null;
+        }
+        const instance = echarts.init(node, null, { renderer: "svg" });
+        instance.setOption(common);
+        return instance;
+      }
+
+      const siteCoverageChart = chart("siteCoverageChart");
+      siteCoverageChart && siteCoverageChart.setOption({
+        tooltip: { trigger: "axis", axisPointer: { type: "shadow" } },
+        legend: { top: 0, textStyle: { color: muted } },
+        grid: { left: 36, right: 20, top: 38, bottom: 56, containLabel: true },
+        xAxis: {
+          type: "category",
+          data: reportData.siteOperations.map((row) => row.name),
+          axisLabel: {
+            color: muted,
+            rotate: 16,
+            margin: 14,
+            formatter: (value) => truncateLabel(value, 14),
+          },
+          axisLine: { lineStyle: { color: axis } },
+        },
+        yAxis: {
+          type: "value",
+          axisLabel: { color: muted },
+          splitLine: { lineStyle: { color: grid } },
+        },
+        series: [
+          {
+            name: "Devices",
+            type: "bar",
+            data: reportData.siteOperations.map((row) => row.monitored_devices),
+            barMaxWidth: 30,
+          },
+          {
+            name: "Active Alerts",
+            type: "line",
+            smooth: true,
+            data: reportData.siteOperations.map((row) => row.active_alerts),
+            lineStyle: { width: 3 },
+            symbolSize: 7,
+          }
+        ],
+      });
+
+      const alertTrendChart = chart("alertTrendChart");
+      alertTrendChart && alertTrendChart.setOption({
+        tooltip: { trigger: "axis" },
+        legend: { top: 0, textStyle: { color: muted } },
+        grid: { left: 36, right: 20, top: 38, bottom: 28 },
+        xAxis: {
+          type: "category",
+          data: reportData.alertDailyFlow.map((row) => row.date),
+          axisLabel: { color: muted },
+          axisLine: { lineStyle: { color: axis } },
+        },
+        yAxis: {
+          type: "value",
+          axisLabel: { color: muted },
+          splitLine: { lineStyle: { color: grid } },
+        },
+        series: [
+          {
+            name: "Opened",
+            type: "bar",
+            data: reportData.alertDailyFlow.map((row) => row.opened),
+            barMaxWidth: 26,
+          },
+          {
+            name: "Closed",
+            type: "line",
+            smooth: true,
+            data: reportData.alertDailyFlow.map((row) => row.cleared),
+            lineStyle: { width: 3 },
+            symbolSize: 6,
+          }
+        ],
+      });
+    </script>
+  </body>
+</html>

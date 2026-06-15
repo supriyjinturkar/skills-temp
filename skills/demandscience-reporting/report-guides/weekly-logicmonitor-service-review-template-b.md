@@ -109,10 +109,11 @@ Required output:
 
 Preferred collector path for this rollout:
 
-- MCP tool: `logicmonitor.collect_report_bundle`
-- call the preferred collector once for the resolved weekly window and reuse that bundle for every section in this template unless a verified field gap is documented
+- MCP live collection tool: `logicmonitor.refresh_report_bundle`
+- MCP cached bundle read: `logicmonitor.get_report_bundle`
+- call the live collection tool once for the resolved weekly window and tenant, then reuse the cached bundle for every section in this template unless a verified field gap is documented
 - this bundle is expected to provide the required availability, site, and alert inputs for Template B
-- do not add a separate `logicmonitor.collect_availability_summary` call unless the bundle was checked first and found to be missing a required Template B field
+- do not add a separate `logicmonitor.get_availability_summary` call unless the bundle was checked first and found to be missing a required Template B field
 
 ## Render placeholders
 

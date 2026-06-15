@@ -39,9 +39,10 @@ This skill is the Fleet-compatible customer reporting pack for DemandScience wee
 - Do not put customer credentials in this skill.
 - Assume customer-specific datasource credentials are resolved by the MCP service using `customer_id` / tenant configuration.
 - Use the shared LogicMonitor MCP path for this Fleet demo flow.
-- For weekly LogicMonitor reports, treat `logicmonitor.collect_report_bundle` as the primary collector for all sections it already covers.
-- Call the preferred weekly LogicMonitor report-bundle collector once per report run for the resolved customer and reporting window, then reuse that same collected bundle for drafting, rendering, review handoff, and delivery validation.
-- Do not call `logicmonitor.collect_availability_summary` or other narrower LogicMonitor collectors unless the bundle is first shown to be missing a required field or unusable for a required section.
+- For weekly LogicMonitor reports, use `logicmonitor.refresh_report_bundle` for the live collection step and `logicmonitor.get_report_bundle` as the default cached bundle read for covered sections.
+- Call `logicmonitor.refresh_report_bundle` once per report run for the resolved tenant and reporting window, then reuse the resulting cached bundle for drafting, rendering, review handoff, and delivery validation.
+- Use `logicmonitor.get_report_bundle` or `logicmonitor.get_cached_collection` to read the cached report bundle after refresh.
+- Do not call `logicmonitor.get_availability_summary` or other narrower LogicMonitor reads unless the bundle is first shown to be missing a required field or unusable for a required section.
 - Do not re-collect LogicMonitor data just because HTML rendering failed, the artifact path was wrong, the review-mail step failed, or a cached-read step was miscalled. Fix the downstream step and keep using the collected bundle already produced for that run.
 - Keep SDM review mandatory before final delivery.
 - After generating and verifying a draft artifact, read `references/company-profile.md` for `review delivery emails` and send the review mail through `messaging.send_review_email`.

@@ -27,6 +27,16 @@ def main(argv: list[str] | None = None) -> int:
     write_json_file(run_paths["availability_summary_file"], result["availability_summary"])
     write_json_file(run_paths["alert_trends_file"], result["alert_trends"])
     write_json_file(run_paths["resource_health_file"], result["resource_health"])
+    write_json_file(run_paths["monitoring_coverage_file"], result["monitoring_coverage"])
+    write_json_file(run_paths["website_experience_file"], result["website_experience"])
+    write_json_file(run_paths["platform_assets_file"], result["platform_assets"])
+    write_json_file(run_paths["report_inventory_file"], result["report_inventory"])
+    write_json_file(run_paths["inventory_exceptions_file"], result["inventory_exceptions"])
+    write_json_file(run_paths["root_scope_summary_file"], result["root_scope_summary"])
+    write_json_file(run_paths["device_availability_file"], result["device_availability"])
+    write_json_file(run_paths["cpu_memory_utilization_file"], result["cpu_memory_utilization"])
+    write_json_file(run_paths["disk_capacity_utilization_file"], result["disk_capacity_utilization"])
+    write_json_file(run_paths["network_interface_throughput_file"], result["network_interface_throughput"])
     write_json_file(run_paths["logicmonitor_bundle_file"], result["bundle"])
     sys.stdout.write(
         f"{json.dumps({'ok': True, 'run_dir': run_paths['root'], 'outputs': {'snapshot': run_paths['logicmonitor_snapshot_file'], 'observability': run_paths['observability_file'], 'bundle': run_paths['logicmonitor_bundle_file']}})}\n",

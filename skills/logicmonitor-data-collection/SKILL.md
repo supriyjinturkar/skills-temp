@@ -7,6 +7,8 @@ description: Use when a LangSmith Fleet agent needs to resolve customer scope, c
 
 This skill packages the Python collection pipeline that a Fleet agent can run inside its sandbox for Nexon customer reporting.
 
+This skill folder is the authoritative implementation path for the Fleet LogicMonitor collector.
+
 ## Use this skill for
 
 - resolving a company name into LogicMonitor customer scope
@@ -143,7 +145,40 @@ python3 skills/logicmonitor-data-collection/scripts/build_logicmonitor_report_bu
 - `run/normalized/availability_summary.json`
 - `run/normalized/alert_trends.json`
 - `run/normalized/resource_health.json`
+- `run/normalized/monitoring_coverage.json`
+- `run/normalized/website_experience.json`
+- `run/normalized/platform_assets.json`
+- `run/normalized/report_inventory.json`
+- `run/normalized/inventory_exceptions.json`
+- `run/normalized/root_scope_summary.json`
+- `run/normalized/device_availability.json`
+- `run/normalized/cpu_memory_utilization.json`
+- `run/normalized/disk_capacity_utilization.json`
+- `run/normalized/network_interface_throughput.json`
 - `run/normalized/logicmonitor_report_bundle.json`
+
+## Coverage summary
+
+This skill now collects:
+
+- scoped devices, groups, alerts, and root website inventory
+- unmonitored devices
+- collectors
+- checkpoints
+- saved reports and report details
+- performance aggregates for device availability, CPU, memory, disk, and network throughput
+
+By default, the skill collects all currently supported LogicMonitor report modules for the resolved customer scope in one run-scoped bundle.
+
+The currently supported performance datasource families are:
+
+- `Microsoft_Windows_CPU`
+- `WinOS`
+- `WinVolumeUsage-*`
+- `Ping`
+- `WinIf-*`
+
+This is not yet a generic "collect every arbitrary LogicMonitor datasource" mode, and it is not yet a per-customer datasource-selection policy engine.
 
 ## Guardrails
 

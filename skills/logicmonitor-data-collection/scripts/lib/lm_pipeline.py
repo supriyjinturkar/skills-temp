@@ -123,6 +123,104 @@ def _parse_string_array(value) -> list[str]:
     return []
 
 
+def _safe_float(value):
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return None
+    if math.isnan(numeric) or math.isinf(numeric):
+        return None
+    return numeric
+
+
+def _flatten_numeric_values(value) -> list[float]:
+    if isinstance(value, list):
+        values = []
+        for entry in value:
+            values.extend(_flatten_numeric_values(entry))
+        return values
+    if isinstance(value, dict):
+        for key in ("values", "items", "data", "series", "points"):
+            if key in value:
+                nested = _flatten_numeric_values(value[key])
+                if nested:
+                    return nested
+        for key in ("value", "avg", "max", "min"):
+            numeric = _safe_float(value.get(key))
+            if numeric is not None:
+                return [numeric]
+        return []
+    numeric = _safe_float(value)
+    return [] if numeric is None else [numeric]
+
+
+def _average_value(values: list[float]) -> float | None:
+    return _round_value(sum(values) / len(values), 2) if values else None
+
+
+def _max_value(values: list[float]) -> float | None:
+    return _round_value(max(values), 2) if values else None
+
+
+def _section_items(section) -> list:
+    if isinstance(section, dict):
+        if isinstance(section.get("items"), list):
+            return section["items"]
+        if isinstance(section.get("items"), dict):
+            return list(section["items"].values())
+    return []
+
+
+def _count_collected(section) -> int:
+    if isinstance(section, dict):
+        try:
+            return int(section.get("count_collected") or 0)
+        except (TypeError, ValueError):
+            return 0
+    return 0
+
+
+def _normalize_website_status(value) -> str:
+    raw = str(value or "").strip().lower()
+    if raw in {"up", "active", "available", "normal", "healthy", "1"}:
+        return "up"
+    if raw in {"warning", "warn", "degraded"}:
+        return "warning"
+    if raw in {"down", "inactive", "unavailable", "critical", "0"}:
+        return "down"
+    return raw or "unknown"
+
+
+def _normalize_metric_key(value) -> str:
+    return "".join(character.lower() for character in str(value or "") if character.isalnum())
+
+
+PERFORMANCE_COLLECTION_SPECS = {
+    "cpu": {
+        "datasource_exact": {"microsoftwindowscpu"},
+        "metric_candidates": ["CPUBusyPercent"],
+    },
+    "memory": {
+        "datasource_exact": {"winos"},
+        "metric_candidates": ["MemoryUtilizationPercent"],
+    },
+    "disk": {
+        "datasource_prefix": ("winvolumeusage",),
+        "metric_candidates": ["PercentUsed"],
+    },
+    "ping": {
+        "datasource_exact": {"ping"},
+        "metric_candidates": ["PacketLossPercent"],
+        "extra_metric_candidates": ["PingRTT", "RoundTripTime", "ResponseTime", "Latency"],
+    },
+    "network": {
+        "datasource_prefix": ("winif",),
+        "metric_candidates": ["ReceivedBitsPerSec", "InboundBitsPerSec"],
+        "extra_metric_candidates": ["OutboundBitsPerSec", "TransmittedBitsPerSec", "SentBitsPerSec"],
+    },
+}
+
+
 def _normalize_device(device: dict, site_property_key: str) -> dict:
     properties = device.get("systemProperties") or device.get("customProperties") or []
     matching_property = next(
@@ -518,6 +616,16 @@ def build_report_bundle(meta: dict, normalized: dict, snapshot: dict) -> dict:
     health = build_resource_health(meta, normalized)
     derived_metrics = _build_derived_metrics(meta, normalized)
     site_operations = _build_site_operations(meta, normalized)
+    monitoring_coverage = build_monitoring_coverage(meta, snapshot)
+    website_experience = build_website_experience(meta, snapshot)
+    platform_assets = build_platform_assets(meta, snapshot)
+    report_inventory = build_report_inventory(meta, snapshot)
+    inventory_exceptions = build_inventory_exceptions(meta, snapshot)
+    root_scope_summary = build_root_scope_summary(meta, snapshot)
+    device_availability = build_device_availability(meta, snapshot)
+    cpu_memory_utilization = build_cpu_memory_utilization(meta, snapshot)
+    disk_capacity_utilization = build_disk_capacity_utilization(meta, snapshot)
+    network_interface_throughput = build_network_interface_throughput(meta, snapshot)
     return {
         "datasource": "logicmonitor",
         "dataset": "logicmonitor_report_bundle",
@@ -529,6 +637,8 @@ def build_report_bundle(meta: dict, normalized: dict, snapshot: dict) -> dict:
         "sections": {
             "executive_summary": " ".join([
                 f"{availability['monitored_devices']} monitored devices were evaluated for the reporting window.",
+                f"{monitoring_coverage['unmonitored_devices']} additional devices are currently marked as unmonitored.",
+                f"{website_experience['monitored_websites']} monitored websites were included in the LogicMonitor collection.",
                 f"{alerts['alert_counts_closed']} alerts were cleared compared with {alerts['alert_counts_opened']} alerts opened.",
                 f"{health['critical_devices']} devices remained in critical state at the end of the collection window.",
                 f"{derived_metrics['alert_handling_kpis']['clear_rate_percent']}% of alerts were cleared inside the reporting window.",
@@ -538,6 +648,16 @@ def build_report_bundle(meta: dict, normalized: dict, snapshot: dict) -> dict:
             "alert_trends": alerts,
             "resource_health": health,
             "site_operations": site_operations,
+            "monitoring_coverage": monitoring_coverage,
+            "website_experience": website_experience,
+            "platform_assets": platform_assets,
+            "report_inventory": report_inventory,
+            "inventory_exceptions": inventory_exceptions,
+            "root_scope_summary": root_scope_summary,
+            "device_availability": device_availability,
+            "cpu_memory_utilization": cpu_memory_utilization,
+            "disk_capacity_utilization": disk_capacity_utilization,
+            "network_interface_throughput": network_interface_throughput,
             "collection_notes": {
                 "availability_method": availability["availability_method"],
                 "grouping_method": availability["grouping_method"],
@@ -761,6 +881,65 @@ class LogicMonitorApi:
             "items": rows,
         }
 
+    def _is_optional_endpoint_unavailable(self, error: RuntimeError) -> bool:
+        message = str(error)
+        return "404" in message or "403" in message or "406" in message
+
+    def fetch_optional_paged(self, resource_path: str) -> dict:
+        try:
+            return self.list_paged(resource_path)
+        except RuntimeError as error:
+            if not self._is_optional_endpoint_unavailable(error):
+                raise
+            return _empty_paged_result()
+
+    def fetch_unmonitored_devices(self) -> dict:
+        try:
+            return self.list_paged("/device/unmonitoreddevices")
+        except RuntimeError:
+            return self.list_paged("/device/devices", query={"filter": 'hostStatus:"unmonitored"'})
+
+    def fetch_website_groups(self) -> dict:
+        return self.fetch_optional_paged("/website/groups")
+
+    def fetch_websites(self) -> dict:
+        return self.fetch_optional_paged("/website/websites")
+
+    def fetch_smcheckpoints(self) -> dict:
+        return self.fetch_optional_paged("/setting/smcheckpoints")
+
+    def fetch_collectors(self) -> dict:
+        return self.fetch_optional_paged("/setting/collectors")
+
+    def fetch_reports(self) -> dict:
+        return self.fetch_optional_paged("/report/reports")
+
+    def fetch_device_datasources(self, device_id) -> dict:
+        return self.list_paged(f"/device/devices/{device_id}/devicedatasources")
+
+    def fetch_datasource_instances(self, device_id, datasource_id) -> dict:
+        return self.list_paged(f"/device/devices/{device_id}/devicedatasources/{datasource_id}/instances")
+
+    def fetch_datasource_instance_data(
+        self,
+        device_id,
+        datasource_id,
+        instance_id,
+        metric_candidates: list[str],
+        start_ms: int,
+        end_ms: int,
+    ):
+        query = {
+            "datapoints": ",".join(metric_candidates),
+            "start": start_ms,
+            "end": end_ms,
+        }
+        return self.request(
+            "GET",
+            f"/device/devices/{device_id}/devicedatasources/{datasource_id}/instances/{instance_id}/data",
+            query=query,
+        )
+
     def fetch_alerts(self, start_ms: int, end_ms: int, options: dict | None = None) -> dict:
         options = options or {}
         all_alerts = []
@@ -804,7 +983,7 @@ class LogicMonitorApi:
             result["device_group_devices"] = self.list_paged(f"/device/groups/{root_device_group_id}/devices")
             result["device_group_alerts"] = self.fetch_alerts(start_ms, end_ms, {"group_id": root_device_group_id, "cleared": False})
         if root_website_group_id is not None:
-            result["website_group_websites"] = self.list_paged(f"/website/groups/{root_website_group_id}/websites")
+            result["website_group_websites"] = self.fetch_optional_paged(f"/website/groups/{root_website_group_id}/websites")
         return result
 
     def get_diagnostics(self) -> dict:
@@ -1068,6 +1247,613 @@ def _summarize_source_inventory(snapshot: dict) -> dict:
     }
 
 
+def _device_name(device: dict) -> str:
+    return str(
+        device.get("displayName")
+        or device.get("systemDisplayName")
+        or device.get("name")
+        or device.get("hostName")
+        or device.get("hostname")
+        or f"device-{device.get('id', 'unknown')}"
+    )
+
+
+def _datasource_name_variants(datasource: dict) -> list[str]:
+    return [
+        _normalize_metric_key(datasource.get("name")),
+        _normalize_metric_key(datasource.get("displayName")),
+        _normalize_metric_key(datasource.get("dataSourceName")),
+    ]
+
+
+def _match_performance_collection_key(datasource: dict) -> str | None:
+    variants = [value for value in _datasource_name_variants(datasource) if value]
+    if not variants:
+        return None
+    for collection_key, spec in PERFORMANCE_COLLECTION_SPECS.items():
+        if any(value in spec.get("datasource_exact", set()) for value in variants):
+            return collection_key
+        if any(any(value.startswith(prefix) for prefix in spec.get("datasource_prefix", ())) for value in variants):
+            return collection_key
+    return None
+
+
+def _instance_label(instance: dict) -> str:
+    return str(
+        instance.get("name")
+        or instance.get("displayName")
+        or instance.get("instanceDescription")
+        or instance.get("description")
+        or instance.get("wildvalue")
+        or instance.get("id")
+        or "unknown-instance"
+    )
+
+
+def _collect_series_from_payload(payload, series: dict[str, list[float]]) -> None:
+    if isinstance(payload, dict):
+        datapoints = payload.get("datapoints")
+        if isinstance(datapoints, dict):
+            for name, values in datapoints.items():
+                flattened = _flatten_numeric_values(values)
+                if flattened:
+                    series[_normalize_metric_key(name)] = flattened
+        if "name" in payload:
+            flattened = _flatten_numeric_values(payload.get("values") or payload.get("data") or payload.get("items"))
+            if flattened:
+                series[_normalize_metric_key(payload.get("name"))] = flattened
+        for value in payload.values():
+            if isinstance(value, (dict, list)):
+                _collect_series_from_payload(value, series)
+        return
+    if isinstance(payload, list):
+        for item in payload:
+            _collect_series_from_payload(item, series)
+
+
+def _extract_named_series(payload) -> dict[str, list[float]]:
+    series: dict[str, list[float]] = {}
+    _collect_series_from_payload(payload, series)
+    if not series:
+        flattened = _flatten_numeric_values(payload)
+        if flattened:
+            series["default"] = flattened
+    return series
+
+
+def _choose_series_values(series: dict[str, list[float]], candidates: list[str]) -> list[float]:
+    for candidate in candidates:
+        values = series.get(_normalize_metric_key(candidate))
+        if values:
+            return values
+    return series.get("default") or []
+
+
+def _collect_performance_metrics(api: LogicMonitorApi, context: dict, devices: list[dict]) -> dict:
+    summary = {
+        "devices_considered": len(devices),
+        "matched_datasources": {key: 0 for key in PERFORMANCE_COLLECTION_SPECS},
+        "matched_instances": {key: 0 for key in PERFORMANCE_COLLECTION_SPECS},
+    }
+    devices_with_metrics = {key: set() for key in PERFORMANCE_COLLECTION_SPECS}
+    availability_rows = []
+    cpu_rows = []
+    memory_rows = []
+    disk_rows = []
+    network_rows = []
+    for device in devices:
+        device_id = device.get("id")
+        if device_id in (None, ""):
+            continue
+        device_id_text = str(device_id)
+        device_name = _device_name(device)
+        try:
+            datasource_result = api.fetch_device_datasources(device_id_text)
+        except RuntimeError:
+            continue
+        for datasource in datasource_result.get("items") or []:
+            collection_key = _match_performance_collection_key(datasource)
+            if not collection_key:
+                continue
+            spec = PERFORMANCE_COLLECTION_SPECS[collection_key]
+            summary["matched_datasources"][collection_key] += 1
+            devices_with_metrics[collection_key].add(device_id_text)
+            datasource_id = datasource.get("id")
+            if datasource_id in (None, ""):
+                continue
+            try:
+                instance_result = api.fetch_datasource_instances(device_id_text, datasource_id)
+            except RuntimeError:
+                continue
+            for instance in instance_result.get("items") or []:
+                summary["matched_instances"][collection_key] += 1
+                instance_id = instance.get("id")
+                if instance_id in (None, ""):
+                    continue
+                query_metrics = [
+                    *spec.get("metric_candidates", []),
+                    *spec.get("extra_metric_candidates", []),
+                ]
+                try:
+                    payload = api.fetch_datasource_instance_data(
+                        device_id_text,
+                        datasource_id,
+                        str(instance_id),
+                        query_metrics,
+                        context["period"]["start_ms"],
+                        context["period"]["end_ms"],
+                    )
+                except RuntimeError:
+                    continue
+                series = _extract_named_series(payload)
+                instance_name = _instance_label(instance)
+                if collection_key == "cpu":
+                    values = _choose_series_values(series, spec["metric_candidates"])
+                    average = _average_value(values)
+                    if average is not None:
+                        cpu_rows.append({
+                            "device_id": device_id_text,
+                            "device_name": device_name,
+                            "instance_name": instance_name,
+                            "avg_percent": average,
+                        })
+                elif collection_key == "memory":
+                    values = _choose_series_values(series, spec["metric_candidates"])
+                    average = _average_value(values)
+                    if average is not None:
+                        memory_rows.append({
+                            "device_id": device_id_text,
+                            "device_name": device_name,
+                            "instance_name": instance_name,
+                            "avg_percent": average,
+                        })
+                elif collection_key == "disk":
+                    values = _choose_series_values(series, spec["metric_candidates"])
+                    average = _average_value(values)
+                    maximum = _max_value(values)
+                    if average is not None or maximum is not None:
+                        disk_rows.append({
+                            "device_id": device_id_text,
+                            "device_name": device_name,
+                            "volume_name": instance_name,
+                            "avg_percent": average,
+                            "max_percent": maximum,
+                        })
+                elif collection_key == "ping":
+                    packet_loss = _choose_series_values(series, spec["metric_candidates"])
+                    rtt = _choose_series_values(series, spec.get("extra_metric_candidates", []))
+                    packet_loss_avg = _average_value(packet_loss)
+                    availability = None if packet_loss_avg is None else _round_value(max(0, 100 - packet_loss_avg), 2)
+                    availability_rows.append({
+                        "device_id": device_id_text,
+                        "device_name": device_name,
+                        "instance_name": instance_name,
+                        "packet_loss_avg_percent": packet_loss_avg,
+                        "ping_rtt_avg_ms": _average_value(rtt),
+                        "availability_percent": availability,
+                    })
+                elif collection_key == "network":
+                    rx_values = _choose_series_values(series, spec["metric_candidates"])
+                    tx_values = _choose_series_values(series, spec.get("extra_metric_candidates", []))
+                    rx_avg = _average_value(rx_values)
+                    tx_avg = _average_value(tx_values)
+                    if rx_avg is not None or tx_avg is not None:
+                        network_rows.append({
+                            "device_id": device_id_text,
+                            "device_name": device_name,
+                            "interface_name": instance_name,
+                            "rx_mbps_avg": None if rx_avg is None else _round_value(rx_avg / 1_000_000, 3),
+                            "tx_mbps_avg": None if tx_avg is None else _round_value(tx_avg / 1_000_000, 3),
+                        })
+    summary["devices_with_metrics"] = {
+        key: len(value)
+        for key, value in devices_with_metrics.items()
+    }
+    return {
+        "datasource": "logicmonitor",
+        "dataset": "performance_metrics",
+        "collection_path": "fleet script",
+        "customer_name": context["customer_name"],
+        "report_family": context["report_family"],
+        "period_label": context["period"]["label"],
+        "generated_at": context["generated_at"],
+        "summary": summary,
+        "availability_rows": availability_rows,
+        "cpu_rows": cpu_rows,
+        "memory_rows": memory_rows,
+        "disk_rows": disk_rows,
+        "network_rows": network_rows,
+    }
+
+
+def build_monitoring_coverage(meta: dict, snapshot: dict) -> dict:
+    monitored_devices = _count_collected((snapshot.get("inventory") or {}).get("devices"))
+    unmonitored_devices = _count_collected((snapshot.get("inventory") or {}).get("unmonitored_devices"))
+    total_known_devices = monitored_devices + unmonitored_devices
+    return {
+        "datasource": "logicmonitor",
+        "dataset": "monitoring_coverage",
+        "collection_path": "fleet script",
+        "customer_name": meta["customer_name"],
+        "report_family": meta["report_family"],
+        "period_label": meta["period_label"],
+        "monitored_devices": monitored_devices,
+        "unmonitored_devices": unmonitored_devices,
+        "total_known_devices": total_known_devices,
+        "monitoring_coverage_percent": _ratio_to_percent(monitored_devices, total_known_devices),
+        "website_groups": _count_collected((snapshot.get("inventory") or {}).get("website_groups")),
+        "monitored_websites": _count_collected((snapshot.get("inventory") or {}).get("websites")),
+        "collectors": _count_collected((snapshot.get("inventory") or {}).get("collectors")),
+        "checkpoints": _count_collected((snapshot.get("inventory") or {}).get("smcheckpoints")),
+        "reports_available": _count_collected((snapshot.get("inventory") or {}).get("reports")),
+    }
+
+
+def build_website_experience(meta: dict, snapshot: dict) -> dict:
+    websites = _section_items((snapshot.get("inventory") or {}).get("websites"))
+    website_details = _section_items((snapshot.get("inventory") or {}).get("website_details"))
+    website_groups = _section_items((snapshot.get("inventory") or {}).get("website_groups"))
+    website_group_by_id = {
+        str(group.get("id") or ""): group
+        for group in website_groups
+        if str(group.get("id") or "")
+    }
+    website_summary_by_id = {
+        str(website.get("id") or ""): website
+        for website in websites
+        if str(website.get("id") or "")
+    }
+    source_rows = website_details or websites
+    rows = []
+    for detail in source_rows:
+        website_id = str(detail.get("id") or "")
+        base = website_summary_by_id.get(website_id, {})
+        group = website_group_by_id.get(str(base.get("groupId") or detail.get("groupId") or ""), {})
+        rows.append({
+            "website_id": website_id,
+            "name": str(detail.get("name") or base.get("name") or "unknown-website"),
+            "domain": str(detail.get("domain") or base.get("domain") or ""),
+            "status": _normalize_website_status(detail.get("status") or base.get("status")),
+            "group_name": str(group.get("name") or base.get("groupName") or detail.get("groupName") or "Ungrouped"),
+        })
+    status_breakdown = {"up": 0, "warning": 0, "down": 0, "unknown": 0}
+    for row in rows:
+        status_breakdown[row["status"]] = int(status_breakdown.get(row["status"], 0)) + 1
+    grouped = {}
+    for row in rows:
+        current = grouped.setdefault(row["group_name"], {
+            "name": row["group_name"],
+            "website_count": 0,
+            "down_websites": 0,
+            "warning_websites": 0,
+        })
+        current["website_count"] += 1
+        if row["status"] == "down":
+            current["down_websites"] += 1
+        if row["status"] == "warning":
+            current["warning_websites"] += 1
+    websites_by_group = sorted(
+        grouped.values(),
+        key=lambda row: (-row["down_websites"], -row["warning_websites"], row["name"]),
+    )
+    return {
+        "datasource": "logicmonitor",
+        "dataset": "website_experience",
+        "collection_path": "fleet script",
+        "customer_name": meta["customer_name"],
+        "report_family": meta["report_family"],
+        "period_label": meta["period_label"],
+        "monitored_websites": len(rows),
+        "website_groups": _count_collected((snapshot.get("inventory") or {}).get("website_groups")),
+        "status_breakdown": status_breakdown,
+        "degraded_websites": [row for row in rows if row["status"] != "up"][:10],
+        "websites_by_group": websites_by_group,
+    }
+
+
+def build_platform_assets(meta: dict, snapshot: dict) -> dict:
+    collectors = [
+        {
+            "id": str(collector.get("id") or ""),
+            "name": str(collector.get("description") or collector.get("name") or f"collector-{collector.get('id', 'unknown')}"),
+        }
+        for collector in _section_items((snapshot.get("inventory") or {}).get("collectors"))
+    ]
+    checkpoints = [
+        {
+            "id": str(checkpoint.get("id") or ""),
+            "name": str(checkpoint.get("name") or checkpoint.get("description") or f"checkpoint-{checkpoint.get('id', 'unknown')}"),
+        }
+        for checkpoint in _section_items((snapshot.get("inventory") or {}).get("smcheckpoints"))
+    ]
+    return {
+        "datasource": "logicmonitor",
+        "dataset": "platform_assets",
+        "collection_path": "fleet script",
+        "customer_name": meta["customer_name"],
+        "report_family": meta["report_family"],
+        "period_label": meta["period_label"],
+        "collectors": {"count": len(collectors), "items": collectors[:20]},
+        "checkpoints": {"count": len(checkpoints), "items": checkpoints[:20]},
+    }
+
+
+def build_report_inventory(meta: dict, snapshot: dict) -> dict:
+    reports = _section_items((snapshot.get("inventory") or {}).get("reports"))
+    report_details = _section_items((snapshot.get("inventory") or {}).get("report_details"))
+    details_by_id = {
+        str(detail.get("id") or ""): detail
+        for detail in report_details
+        if str(detail.get("id") or "")
+    }
+    breakdown = {}
+    rows = []
+    for report in reports:
+        report_id = str(report.get("id") or "")
+        detail = details_by_id.get(report_id, {})
+        report_type = str(report.get("type") or detail.get("type") or "unknown")
+        breakdown[report_type] = int(breakdown.get(report_type, 0)) + 1
+        rows.append({
+            "id": report_id,
+            "name": str(report.get("name") or detail.get("name") or "unknown-report"),
+            "type": report_type,
+            "format": str(detail.get("format") or "unknown"),
+        })
+    return {
+        "datasource": "logicmonitor",
+        "dataset": "report_inventory",
+        "collection_path": "fleet script",
+        "customer_name": meta["customer_name"],
+        "report_family": meta["report_family"],
+        "period_label": meta["period_label"],
+        "reports_available": len(rows),
+        "report_type_breakdown": breakdown,
+        "reports": rows[:20],
+    }
+
+
+def build_inventory_exceptions(meta: dict, snapshot: dict) -> dict:
+    unmonitored = _section_items((snapshot.get("inventory") or {}).get("unmonitored_devices"))
+    rows = [
+        {
+            "id": str(device.get("id") or ""),
+            "name": str(device.get("displayName") or device.get("systemDisplayName") or device.get("name") or f"device-{device.get('id', 'unknown')}"),
+            "host_status": _normalize_host_status(device.get("hostStatus") or device.get("status") or "unmonitored"),
+        }
+        for device in unmonitored
+    ]
+    return {
+        "datasource": "logicmonitor",
+        "dataset": "inventory_exceptions",
+        "collection_path": "fleet script",
+        "customer_name": meta["customer_name"],
+        "report_family": meta["report_family"],
+        "period_label": meta["period_label"],
+        "unmonitored_device_count": len(rows),
+        "unmonitored_devices": rows[:20],
+    }
+
+
+def build_root_scope_summary(meta: dict, snapshot: dict) -> dict:
+    root_scope = snapshot.get("aaic_root_scope") or {}
+    return {
+        "datasource": "logicmonitor",
+        "dataset": "root_scope_summary",
+        "collection_path": "fleet script",
+        "customer_name": meta["customer_name"],
+        "report_family": meta["report_family"],
+        "period_label": meta["period_label"],
+        "device_group_id": root_scope.get("device_group_id"),
+        "website_group_id": root_scope.get("website_group_id"),
+        "scoped_devices": _count_collected(root_scope.get("device_group_devices")),
+        "scoped_alerts": _count_collected(root_scope.get("device_group_alerts")),
+        "scoped_websites": _count_collected(root_scope.get("website_group_websites")),
+    }
+
+
+def build_snapshot_optional_metrics(meta: dict, snapshot: dict) -> dict:
+    monitoring_coverage = build_monitoring_coverage(meta, snapshot)
+    website_experience = build_website_experience(meta, snapshot)
+    root_scope_summary = build_root_scope_summary(meta, snapshot)
+    return {
+        "metrics_summary": {
+            "monitored_devices": monitoring_coverage["monitored_devices"],
+            "unmonitored_devices": monitoring_coverage["unmonitored_devices"],
+            "monitoring_coverage_percent": monitoring_coverage["monitoring_coverage_percent"],
+            "monitored_websites": website_experience["monitored_websites"],
+            "website_status_breakdown": website_experience["status_breakdown"],
+            "scoped_alerts": root_scope_summary["scoped_alerts"],
+            "reports_available": _count_collected((snapshot.get("inventory") or {}).get("reports")),
+        },
+        "metrics_usage": {
+            "report_ready_sections": [
+                "monitoring_coverage",
+                "website_experience",
+                "platform_assets",
+                "report_inventory",
+                "inventory_exceptions",
+                "root_scope_summary",
+                "device_availability",
+                "cpu_memory_utilization",
+                "disk_capacity_utilization",
+                "network_interface_throughput",
+            ],
+            "collection_window": {
+                "start": meta["start_iso"],
+                "end": meta["end_iso"],
+            },
+            "source_scope": {
+                "tenant_id": meta["tenant_id"],
+                "report_family": meta["report_family"],
+                "site_groups": meta["site_groups"],
+            },
+        },
+        "usage_contract_info": None,
+    }
+
+
+def _group_metric_rows_by_device(rows: list[dict], device_field: str = "device_name") -> list[dict]:
+    grouped = {}
+    for row in rows:
+        key = str(row.get("device_id") or row.get(device_field) or "")
+        current = grouped.setdefault(key, {"device_id": str(row.get("device_id") or ""), "device_name": str(row.get(device_field) or "")})
+        current.setdefault("__rows", []).append(row)
+    return list(grouped.values())
+
+
+def _availability_status(availability_percent, packet_loss_percent) -> str:
+    if availability_percent is None:
+        return "unknown"
+    if availability_percent <= 95 or (packet_loss_percent is not None and packet_loss_percent >= 5):
+        return "Critical"
+    if availability_percent < 100 or (packet_loss_percent is not None and packet_loss_percent > 0):
+        return "Degraded"
+    return "Healthy"
+
+
+def build_device_availability(meta: dict, snapshot: dict) -> dict:
+    raw_rows = ((snapshot.get("performance_metrics") or {}).get("availability_rows")) or []
+    grouped_rows = _group_metric_rows_by_device(raw_rows)
+    rows = []
+    for entry in grouped_rows:
+        packet_loss_values = [row.get("packet_loss_avg_percent") for row in entry["__rows"] if row.get("packet_loss_avg_percent") is not None]
+        rtt_values = [row.get("ping_rtt_avg_ms") for row in entry["__rows"] if row.get("ping_rtt_avg_ms") is not None]
+        availability_values = [row.get("availability_percent") for row in entry["__rows"] if row.get("availability_percent") is not None]
+        packet_loss_avg = _average_value(packet_loss_values)
+        availability = _average_value(availability_values)
+        rows.append({
+            "device_id": entry["device_id"],
+            "device": entry["device_name"],
+            "availability_percent": availability,
+            "ping_rtt_ms": _average_value(rtt_values),
+            "packet_loss_avg_percent": packet_loss_avg,
+            "status": _availability_status(availability, packet_loss_avg),
+        })
+    rows = sorted(rows, key=lambda row: (row["availability_percent"] is None, row["availability_percent"] if row["availability_percent"] is not None else 999, row["device"]))
+    availability_values = [row["availability_percent"] for row in rows if row["availability_percent"] is not None]
+    return {
+        "datasource": "logicmonitor",
+        "dataset": "device_availability",
+        "collection_path": "fleet script",
+        "customer_name": meta["customer_name"],
+        "report_family": meta["report_family"],
+        "period_label": meta["period_label"],
+        "average_availability_percent": _average_value(availability_values),
+        "minimum_availability_percent": _round_value(min(availability_values), 2) if availability_values else None,
+        "devices_monitored": len(rows),
+        "devices": rows,
+    }
+
+
+def _aggregate_average_by_device(rows: list[dict], value_key: str) -> list[dict]:
+    grouped = _group_metric_rows_by_device(rows)
+    result = []
+    for entry in grouped:
+        values = [row.get(value_key) for row in entry["__rows"] if row.get(value_key) is not None]
+        average = _average_value(values)
+        if average is not None:
+            result.append({
+                "device_id": entry["device_id"],
+                "device": entry["device_name"],
+                "avg_percent": average,
+            })
+    return sorted(result, key=lambda row: (-row["avg_percent"], row["device"]))
+
+
+def build_cpu_memory_utilization(meta: dict, snapshot: dict) -> dict:
+    performance = snapshot.get("performance_metrics") or {}
+    cpu_rows = _aggregate_average_by_device(performance.get("cpu_rows") or [], "avg_percent")
+    memory_rows = _aggregate_average_by_device(performance.get("memory_rows") or [], "avg_percent")
+    return {
+        "datasource": "logicmonitor",
+        "dataset": "cpu_memory_utilization",
+        "collection_path": "fleet script",
+        "customer_name": meta["customer_name"],
+        "report_family": meta["report_family"],
+        "period_label": meta["period_label"],
+        "cpu_devices": cpu_rows,
+        "memory_devices": memory_rows,
+    }
+
+
+def build_disk_capacity_utilization(meta: dict, snapshot: dict) -> dict:
+    raw_rows = ((snapshot.get("performance_metrics") or {}).get("disk_rows")) or []
+    highest_per_device = {}
+    for row in raw_rows:
+        key = str(row.get("device_id") or row.get("device_name") or "")
+        current = highest_per_device.get(key)
+        candidate = row.get("max_percent")
+        if current is None or ((candidate or -1) > (current.get("max_percent") or -1)):
+            highest_per_device[key] = {
+                "device_id": str(row.get("device_id") or ""),
+                "device": str(row.get("device_name") or ""),
+                "max_percent": candidate,
+            }
+    highest_rows = sorted(highest_per_device.values(), key=lambda row: (-(row["max_percent"] or -1), row["device"]))
+    volume_detail = sorted(
+        [
+            {
+                "device_id": str(row.get("device_id") or ""),
+                "device": str(row.get("device_name") or ""),
+                "volume": str(row.get("volume_name") or ""),
+                "avg_percent": row.get("avg_percent"),
+                "max_percent": row.get("max_percent"),
+            }
+            for row in raw_rows
+        ],
+        key=lambda row: (-(row["max_percent"] or -1), row["device"], row["volume"]),
+    )
+    return {
+        "datasource": "logicmonitor",
+        "dataset": "disk_capacity_utilization",
+        "collection_path": "fleet script",
+        "customer_name": meta["customer_name"],
+        "report_family": meta["report_family"],
+        "period_label": meta["period_label"],
+        "highest_disk_volume_usage_by_device": highest_rows,
+        "volume_detail": volume_detail,
+    }
+
+
+def build_network_interface_throughput(meta: dict, snapshot: dict) -> dict:
+    raw_rows = ((snapshot.get("performance_metrics") or {}).get("network_rows")) or []
+    grouped = _group_metric_rows_by_device(raw_rows)
+    device_summary = []
+    for entry in grouped:
+        rx_values = [row.get("rx_mbps_avg") or 0 for row in entry["__rows"]]
+        tx_values = [row.get("tx_mbps_avg") or 0 for row in entry["__rows"]]
+        device_summary.append({
+            "device_id": entry["device_id"],
+            "device": entry["device_name"],
+            "rx_mbps_avg": _round_value(sum(rx_values), 3),
+            "tx_mbps_avg": _round_value(sum(tx_values), 3),
+        })
+    device_summary.sort(key=lambda row: (-(row["rx_mbps_avg"] + row["tx_mbps_avg"]), row["device"]))
+    interface_detail = sorted(
+        [
+            {
+                "device_id": str(row.get("device_id") or ""),
+                "device": str(row.get("device_name") or ""),
+                "interface": str(row.get("interface_name") or ""),
+                "rx_mbps_avg": row.get("rx_mbps_avg"),
+                "tx_mbps_avg": row.get("tx_mbps_avg"),
+            }
+            for row in raw_rows
+        ],
+        key=lambda row: (-((row["rx_mbps_avg"] or 0) + (row["tx_mbps_avg"] or 0)), row["device"], row["interface"]),
+    )
+    return {
+        "datasource": "logicmonitor",
+        "dataset": "network_interface_throughput",
+        "collection_path": "fleet script",
+        "customer_name": meta["customer_name"],
+        "report_family": meta["report_family"],
+        "period_label": meta["period_label"],
+        "device_network_summary": device_summary,
+        "interface_detail": interface_detail,
+    }
+
+
 def resolve_logicmonitor_scope_by_company(context: dict, fetch_impl=None, sleep_impl=None) -> dict:
     api = LogicMonitorApi(context["logicmonitor"], fetch_impl=fetch_impl, sleep_impl=sleep_impl)
     queries = [
@@ -1200,6 +1986,12 @@ def collect_logicmonitor_snapshot(context: dict, fetch_impl=None, sleep_impl=Non
     device_group_details = _safe_fetch_entity_details(api, "/device/groups", device_scope["groups"]["items"])
     device_details = _safe_fetch_entity_details(api, "/device/devices", device_scope["devices"]["items"])
     website_scope = _fetch_website_scope(api, context)
+    unmonitored_devices = api.fetch_unmonitored_devices()
+    smcheckpoints = api.fetch_smcheckpoints()
+    collectors = api.fetch_collectors()
+    reports = api.fetch_reports()
+    report_details = _safe_fetch_entity_details(api, "/report/reports", reports.get("items") or [])
+    performance_metrics = _collect_performance_metrics(api, context, device_scope["devices"]["items"])
     root_scope = {
         "device_group_id": context["logicmonitor"]["root_device_group_id"],
         "device_group_devices": {
@@ -1238,15 +2030,15 @@ def collect_logicmonitor_snapshot(context: dict, fetch_impl=None, sleep_impl=Non
             "device_group_details": device_group_details,
             "devices": device_scope["devices"],
             "device_details": device_details,
-            "unmonitored_devices": _empty_paged_result(),
+            "unmonitored_devices": unmonitored_devices,
             "website_groups": website_scope["website_groups"],
             "website_group_details": website_scope["website_group_details"],
             "websites": website_scope["websites"],
             "website_details": website_scope["website_details"],
-            "smcheckpoints": _empty_paged_result(),
-            "collectors": _empty_paged_result(),
-            "reports": _empty_paged_result(),
-            "report_details": _empty_entity_details(),
+            "smcheckpoints": smcheckpoints,
+            "collectors": collectors,
+            "reports": reports,
+            "report_details": report_details,
         },
         "alerts": {
             "count_collected": open_alerts["count_collected"] + cleared_alerts["count_collected"],
@@ -1254,6 +2046,29 @@ def collect_logicmonitor_snapshot(context: dict, fetch_impl=None, sleep_impl=Non
             "cleared": cleared_alerts,
         },
         "aaic_root_scope": root_scope,
+        "optional_metrics": build_snapshot_optional_metrics({
+            "tenant_id": context["logicmonitor"]["tenant_id"],
+            "customer_name": context["customer_name"],
+            "report_family": context["report_family"],
+            "period_label": context["period"]["label"],
+            "start_iso": context["period"]["start_iso"],
+            "end_iso": context["period"]["end_iso"],
+            "site_groups": context["logicmonitor"]["site_groups"],
+        }, {
+            "inventory": {
+                "devices": device_scope["devices"],
+                "unmonitored_devices": unmonitored_devices,
+                "website_groups": website_scope["website_groups"],
+                "websites": website_scope["websites"],
+                "collectors": collectors,
+                "smcheckpoints": smcheckpoints,
+                "reports": reports,
+                "website_details": website_scope["website_details"],
+                "report_details": report_details,
+            },
+            "aaic_root_scope": root_scope,
+        }),
+        "performance_metrics": performance_metrics,
         "collection_log": api.get_diagnostics(),
     }
 
@@ -1298,6 +2113,66 @@ def build_logicmonitor_artifacts(context: dict, snapshot: dict, observability: d
         "tenant_id": context["logicmonitor"]["tenant_id"],
         "template_key": context["template_key"],
     }
+    monitoring_coverage = {
+        **build_monitoring_coverage(meta, snapshot),
+        "customer_id": context["customer_id"],
+        "tenant_id": context["logicmonitor"]["tenant_id"],
+        "template_key": context["template_key"],
+    }
+    website_experience = {
+        **build_website_experience(meta, snapshot),
+        "customer_id": context["customer_id"],
+        "tenant_id": context["logicmonitor"]["tenant_id"],
+        "template_key": context["template_key"],
+    }
+    platform_assets = {
+        **build_platform_assets(meta, snapshot),
+        "customer_id": context["customer_id"],
+        "tenant_id": context["logicmonitor"]["tenant_id"],
+        "template_key": context["template_key"],
+    }
+    report_inventory = {
+        **build_report_inventory(meta, snapshot),
+        "customer_id": context["customer_id"],
+        "tenant_id": context["logicmonitor"]["tenant_id"],
+        "template_key": context["template_key"],
+    }
+    inventory_exceptions = {
+        **build_inventory_exceptions(meta, snapshot),
+        "customer_id": context["customer_id"],
+        "tenant_id": context["logicmonitor"]["tenant_id"],
+        "template_key": context["template_key"],
+    }
+    root_scope_summary = {
+        **build_root_scope_summary(meta, snapshot),
+        "customer_id": context["customer_id"],
+        "tenant_id": context["logicmonitor"]["tenant_id"],
+        "template_key": context["template_key"],
+    }
+    device_availability = {
+        **build_device_availability(meta, snapshot),
+        "customer_id": context["customer_id"],
+        "tenant_id": context["logicmonitor"]["tenant_id"],
+        "template_key": context["template_key"],
+    }
+    cpu_memory_utilization = {
+        **build_cpu_memory_utilization(meta, snapshot),
+        "customer_id": context["customer_id"],
+        "tenant_id": context["logicmonitor"]["tenant_id"],
+        "template_key": context["template_key"],
+    }
+    disk_capacity_utilization = {
+        **build_disk_capacity_utilization(meta, snapshot),
+        "customer_id": context["customer_id"],
+        "tenant_id": context["logicmonitor"]["tenant_id"],
+        "template_key": context["template_key"],
+    }
+    network_interface_throughput = {
+        **build_network_interface_throughput(meta, snapshot),
+        "customer_id": context["customer_id"],
+        "tenant_id": context["logicmonitor"]["tenant_id"],
+        "template_key": context["template_key"],
+    }
     report_bundle = build_report_bundle(meta, normalized, snapshot)
     bundle = {
         **report_bundle,
@@ -1320,6 +2195,16 @@ def build_logicmonitor_artifacts(context: dict, snapshot: dict, observability: d
         "availability_summary": availability_summary,
         "alert_trends": alert_trends,
         "resource_health": resource_health,
+        "monitoring_coverage": monitoring_coverage,
+        "website_experience": website_experience,
+        "platform_assets": platform_assets,
+        "report_inventory": report_inventory,
+        "inventory_exceptions": inventory_exceptions,
+        "root_scope_summary": root_scope_summary,
+        "device_availability": device_availability,
+        "cpu_memory_utilization": cpu_memory_utilization,
+        "disk_capacity_utilization": disk_capacity_utilization,
+        "network_interface_throughput": network_interface_throughput,
         "bundle": bundle,
     }
 

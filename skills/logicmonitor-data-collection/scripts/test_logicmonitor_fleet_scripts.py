@@ -72,6 +72,71 @@ def tenant_fixtures():
             ],
             "total": 2,
         },
+        "unmonitored_devices": {
+            "items": [{"id": 301, "displayName": "cust-a-retired-01", "hostStatus": "unmonitored"}],
+            "total": 1,
+        },
+        "smcheckpoints": {
+            "items": [{"id": 5010, "name": "cust-a-checkpoint"}],
+            "total": 1,
+        },
+        "collectors": {
+            "items": [{"id": 6010, "description": "cust-a-collector"}],
+            "total": 1,
+        },
+        "reports": {
+            "items": [{"id": 7010, "name": "cust-a-monthly-report", "type": "dashboard"}],
+            "total": 1,
+        },
+        "report_details": {
+            "7010": {"id": 7010, "name": "cust-a-monthly-report", "type": "dashboard", "format": "html"},
+        },
+        "devicedatasources": {
+            "1": {
+                "items": [
+                    {"id": 1001, "name": "Microsoft_Windows_CPU"},
+                    {"id": 1002, "name": "WinOS"},
+                    {"id": 1003, "name": "WinVolumeUsage-C"},
+                    {"id": 1004, "name": "Ping"},
+                    {"id": 1005, "name": "WinIf-Ethernet0"},
+                ],
+                "total": 5,
+            },
+            "2": {
+                "items": [
+                    {"id": 2001, "name": "Microsoft_Windows_CPU"},
+                    {"id": 2002, "name": "WinOS"},
+                    {"id": 2003, "name": "WinVolumeUsage-D"},
+                    {"id": 2004, "name": "Ping"},
+                    {"id": 2005, "name": "WinIf-Ethernet0"},
+                ],
+                "total": 5,
+            },
+        },
+        "instances": {
+            "1:1001": {"items": [{"id": 11001, "name": "CPU"}], "total": 1},
+            "1:1002": {"items": [{"id": 11002, "name": "Memory"}], "total": 1},
+            "1:1003": {"items": [{"id": 11003, "name": "C:"}], "total": 1},
+            "1:1004": {"items": [{"id": 11004, "name": "Ping"}], "total": 1},
+            "1:1005": {"items": [{"id": 11005, "name": "Ethernet0"}], "total": 1},
+            "2:2001": {"items": [{"id": 21001, "name": "CPU"}], "total": 1},
+            "2:2002": {"items": [{"id": 21002, "name": "Memory"}], "total": 1},
+            "2:2003": {"items": [{"id": 21003, "name": "D:"}], "total": 1},
+            "2:2004": {"items": [{"id": 21004, "name": "Ping"}], "total": 1},
+            "2:2005": {"items": [{"id": 21005, "name": "Ethernet0"}], "total": 1},
+        },
+        "instance_data": {
+            "1:1001:11001": {"datapoints": {"CPUBusyPercent": [3, 4, 5]}},
+            "1:1002:11002": {"datapoints": {"MemoryUtilizationPercent": [22, 24, 26]}},
+            "1:1003:11003": {"datapoints": {"PercentUsed": [51, 53, 55]}},
+            "1:1004:11004": {"datapoints": {"PacketLossPercent": [0, 0.2, 0.1], "PingRTT": [12, 11, 13]}},
+            "1:1005:11005": {"datapoints": {"ReceivedBitsPerSec": [1000000, 1200000], "OutboundBitsPerSec": [300000, 400000]}},
+            "2:2001:21001": {"datapoints": {"CPUBusyPercent": [44, 45, 46]}},
+            "2:2002:21002": {"datapoints": {"MemoryUtilizationPercent": [70, 72, 71]}},
+            "2:2003:21003": {"datapoints": {"PercentUsed": [80, 82, 87]}},
+            "2:2004:21004": {"datapoints": {"PacketLossPercent": [100, 100], "PingRTT": []}},
+            "2:2005:21005": {"datapoints": {"ReceivedBitsPerSec": [90000, 110000], "OutboundBitsPerSec": [22000, 24000]}},
+        },
     }
 
 
@@ -123,8 +188,60 @@ def create_fetch_mock():
             return 200, {}, json.dumps({"items": [], "total": 0})
         if path_value.endswith("/website/groups"):
             return 200, {}, json.dumps(fixture["website_groups"])
+        if path_value.endswith("/device/unmonitoreddevices"):
+            return 200, {}, json.dumps(fixture["unmonitored_devices"])
+        if path_value.endswith("/setting/smcheckpoints"):
+            return 200, {}, json.dumps(fixture["smcheckpoints"])
+        if path_value.endswith("/setting/collectors"):
+            return 200, {}, json.dumps(fixture["collectors"])
+        if path_value.endswith("/report/reports"):
+            return 200, {}, json.dumps(fixture["reports"])
         if path_value.endswith("/website/groups/201/websites"):
             return 200, {}, json.dumps(fixture["websites"])
+        if path_value.endswith("/device/devices/1/devicedatasources"):
+            return 200, {}, json.dumps(fixture["devicedatasources"]["1"])
+        if path_value.endswith("/device/devices/2/devicedatasources"):
+            return 200, {}, json.dumps(fixture["devicedatasources"]["2"])
+        if path_value.endswith("/device/devices/1/devicedatasources/1001/instances"):
+            return 200, {}, json.dumps(fixture["instances"]["1:1001"])
+        if path_value.endswith("/device/devices/1/devicedatasources/1002/instances"):
+            return 200, {}, json.dumps(fixture["instances"]["1:1002"])
+        if path_value.endswith("/device/devices/1/devicedatasources/1003/instances"):
+            return 200, {}, json.dumps(fixture["instances"]["1:1003"])
+        if path_value.endswith("/device/devices/1/devicedatasources/1004/instances"):
+            return 200, {}, json.dumps(fixture["instances"]["1:1004"])
+        if path_value.endswith("/device/devices/1/devicedatasources/1005/instances"):
+            return 200, {}, json.dumps(fixture["instances"]["1:1005"])
+        if path_value.endswith("/device/devices/2/devicedatasources/2001/instances"):
+            return 200, {}, json.dumps(fixture["instances"]["2:2001"])
+        if path_value.endswith("/device/devices/2/devicedatasources/2002/instances"):
+            return 200, {}, json.dumps(fixture["instances"]["2:2002"])
+        if path_value.endswith("/device/devices/2/devicedatasources/2003/instances"):
+            return 200, {}, json.dumps(fixture["instances"]["2:2003"])
+        if path_value.endswith("/device/devices/2/devicedatasources/2004/instances"):
+            return 200, {}, json.dumps(fixture["instances"]["2:2004"])
+        if path_value.endswith("/device/devices/2/devicedatasources/2005/instances"):
+            return 200, {}, json.dumps(fixture["instances"]["2:2005"])
+        if path_value.endswith("/device/devices/1/devicedatasources/1001/instances/11001/data"):
+            return 200, {}, json.dumps(fixture["instance_data"]["1:1001:11001"])
+        if path_value.endswith("/device/devices/1/devicedatasources/1002/instances/11002/data"):
+            return 200, {}, json.dumps(fixture["instance_data"]["1:1002:11002"])
+        if path_value.endswith("/device/devices/1/devicedatasources/1003/instances/11003/data"):
+            return 200, {}, json.dumps(fixture["instance_data"]["1:1003:11003"])
+        if path_value.endswith("/device/devices/1/devicedatasources/1004/instances/11004/data"):
+            return 200, {}, json.dumps(fixture["instance_data"]["1:1004:11004"])
+        if path_value.endswith("/device/devices/1/devicedatasources/1005/instances/11005/data"):
+            return 200, {}, json.dumps(fixture["instance_data"]["1:1005:11005"])
+        if path_value.endswith("/device/devices/2/devicedatasources/2001/instances/21001/data"):
+            return 200, {}, json.dumps(fixture["instance_data"]["2:2001:21001"])
+        if path_value.endswith("/device/devices/2/devicedatasources/2002/instances/21002/data"):
+            return 200, {}, json.dumps(fixture["instance_data"]["2:2002:21002"])
+        if path_value.endswith("/device/devices/2/devicedatasources/2003/instances/21003/data"):
+            return 200, {}, json.dumps(fixture["instance_data"]["2:2003:21003"])
+        if path_value.endswith("/device/devices/2/devicedatasources/2004/instances/21004/data"):
+            return 200, {}, json.dumps(fixture["instance_data"]["2:2004:21004"])
+        if path_value.endswith("/device/devices/2/devicedatasources/2005/instances/21005/data"):
+            return 200, {}, json.dumps(fixture["instance_data"]["2:2005:21005"])
         if path_value.endswith("/device/groups/101"):
             return 200, {}, json.dumps({"id": 101, "name": "Customer A", "fullPath": "Nexon/Customer A"})
         if path_value.endswith("/device/groups/103"):
@@ -139,6 +256,8 @@ def create_fetch_mock():
             return 200, {}, json.dumps({"id": 201, "name": "Customer A Web", "fullPath": "Web/Customer A"})
         if path_value.endswith("/website/websites/901"):
             return 200, {}, json.dumps({"id": 901, "name": "cust-a-portal", "domain": "a.example.com", "status": "up"})
+        if path_value.endswith("/report/reports/7010"):
+            return 200, {}, json.dumps(fixture["report_details"]["7010"])
         raise AssertionError(f"Unhandled URL {url}")
 
     from urllib.parse import parse_qsl, urlparse  # local import for test isolation
@@ -180,13 +299,26 @@ class LogicMonitorFleetScriptsTest(unittest.TestCase):
         result = run_logicmonitor_pipeline(context, fetch_impl=create_fetch_mock())
         self.assertEqual(result["snapshot"]["dataset"], "logicmonitor_snapshot")
         self.assertEqual(result["snapshot"]["inventory"]["devices"]["count_collected"], 2)
+        self.assertEqual(result["snapshot"]["inventory"]["collectors"]["count_collected"], 1)
+        self.assertEqual(result["snapshot"]["inventory"]["reports"]["count_collected"], 1)
         self.assertEqual(result["observability"]["dataset"], "observability")
         self.assertEqual(result["observability"]["totals"]["devices"], 2)
         self.assertEqual(result["alert_trends"]["alert_counts_opened"], 1)
         self.assertEqual(result["alert_trends"]["alert_counts_closed"], 0)
         self.assertEqual(result["resource_health"]["critical_devices"], 1)
+        self.assertEqual(result["monitoring_coverage"]["unmonitored_devices"], 1)
+        self.assertEqual(result["website_experience"]["monitored_websites"], 1)
+        self.assertEqual(result["platform_assets"]["collectors"]["count"], 1)
+        self.assertEqual(result["report_inventory"]["reports_available"], 1)
+        self.assertEqual(result["inventory_exceptions"]["unmonitored_device_count"], 1)
+        self.assertEqual(result["device_availability"]["devices_monitored"], 2)
+        self.assertEqual(result["cpu_memory_utilization"]["cpu_devices"][0]["device"], "cust-a-sql-01")
+        self.assertEqual(result["disk_capacity_utilization"]["highest_disk_volume_usage_by_device"][0]["device"], "cust-a-sql-01")
+        self.assertEqual(result["network_interface_throughput"]["device_network_summary"][0]["device"], "cust-a-fw-01")
         self.assertEqual(result["bundle"]["dataset"], "logicmonitor_report_bundle")
         self.assertEqual(result["bundle"]["sections"]["source_inventory_summary"]["devices"], 2)
+        self.assertIn("device_availability", result["bundle"]["sections"])
+        self.assertIn("monitoring_coverage", result["bundle"]["sections"])
 
     def test_company_name_resolver_builds_descendant_group_scope(self):
         lookup_context = resolve_logicmonitor_lookup_context(
@@ -255,11 +387,14 @@ class LogicMonitorFleetScriptsTest(unittest.TestCase):
             report_bundle = json.loads(Path(run_paths["logicmonitor_bundle_file"]).read_text(encoding="utf-8"))
             self.assertEqual(observability["dataset"], "observability")
             self.assertEqual(report_bundle["dataset"], "logicmonitor_report_bundle")
+            self.assertEqual(json.loads(Path(run_paths["device_availability_file"]).read_text(encoding="utf-8"))["dataset"], "device_availability")
+            self.assertEqual(json.loads(Path(run_paths["monitoring_coverage_file"]).read_text(encoding="utf-8"))["dataset"], "monitoring_coverage")
 
     def test_run_path_layout(self):
         paths = resolve_run_paths("/tmp/customer-run")
         self.assertEqual(paths["logicmonitor_snapshot_file"], "/tmp/customer-run/source_snapshots/logicmonitor.json")
         self.assertEqual(paths["logicmonitor_bundle_file"], "/tmp/customer-run/normalized/logicmonitor_report_bundle.json")
+        self.assertEqual(paths["device_availability_file"], "/tmp/customer-run/normalized/device_availability.json")
 
 
 if __name__ == "__main__":

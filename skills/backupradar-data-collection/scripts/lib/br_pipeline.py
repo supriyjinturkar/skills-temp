@@ -76,7 +76,9 @@ def _guess_items(payload, items_key: str = "") -> list[dict]:
         return []
     if items_key and isinstance(payload.get(items_key), list):
         return payload[items_key]
-    for key in ("items", "data", "results", "records", "customers", "jobs", "devices", "destinations"):
+    # BackupRadar API v2 uses "Results" as the envelope key for paginated responses.
+    # Generic fallbacks follow; stale v1 keys (customers, jobs, devices, destinations) removed.
+    for key in ("Results", "items", "data", "results", "records"):
         if isinstance(payload.get(key), list):
             return payload[key]
     return [payload] if payload else []
@@ -219,124 +221,58 @@ def _resolve_optional_collection(config: dict, resource: dict, query: dict[str, 
 
 
 def _build_resource_query(resource: dict, customer_id: str, period: dict) -> dict[str, object]:
+    """Build query params for a resource fetch.
+
+    BackupRadar API v2 notes:
+    - Customer scoping uses SearchByCompanyName (set as customer_filter_param in v2 resources).
+      customer_id here carries the resolved company name string for v2.
+    - /backups accepts a single 'date' reference param (the end/as-of date of the window),
+      not a start+end range. end_param is intentionally empty in v2 resource config.
+    - start_param is 'date' pointing at period end_iso (the as-of reference date).
+    """
     query: dict[str, object] = {}
     if resource["customer_filter_param"] and customer_id:
         query[resource["customer_filter_param"]] = customer_id
+    # For v2: start_param="date", end_param="" — use end_iso as the reference date.
+    # For legacy configs that still set start_param to a range start, use start_iso.
     if resource["start_param"]:
-        query[resource["start_param"]] = period["start_iso"]
+        date_value = period["end_iso"][:10] if resource["start_param"] == "date" else period["start_iso"]
+        query[resource["start_param"]] = date_value
     if resource["end_param"]:
         query[resource["end_param"]] = period["end_iso"]
     return query
 
 
-def _normalize_customer(candidate: dict, resource: dict) -> dict:
-    name = _coerce_text(_first_present(candidate, [resource["name_key"], "display_name", "customer_name", "client_name"]))
-    aliases = []
-    for alias_key in resource["alias_keys"]:
-        alias_value = candidate.get(alias_key)
-        if isinstance(alias_value, list):
-            aliases.extend([_coerce_text(entry) for entry in alias_value if _coerce_text(entry)])
-        elif _coerce_text(alias_value):
-            aliases.append(_coerce_text(alias_value))
+def _normalize_device(record: dict) -> dict:
     return {
-        "customer_id": _coerce_text(_first_present(candidate, [resource["id_key"], "customer_id", "client_id", "id"])),
-        "customer_name": name,
-        "aliases": aliases,
-        "raw": candidate,
+        "device_id": _coerce_text(_first_present(record, ["id", "device_id", "asset_id", "endpoint_id"])),
+        "device_name": _coerce_text(_first_present(record, ["name", "device_name", "asset_name", "endpoint_name", "hostname"])) or "unknown-device",
+        "site": _coerce_text(_first_present(record, ["site", "location", "group_name"])),
+        "platform": _coerce_text(_first_present(record, ["platform", "device_type", "type"])),
+        "raw": record,
     }
 
 
-def _score_customer_match(company_name: str, aliases: list[str], candidate: dict) -> int:
-    needles = [_normalize_name(company_name), *[_normalize_name(alias) for alias in aliases]]
-    needles = [needle for needle in needles if needle]
-    candidate_names = [_normalize_name(candidate["customer_name"]), *[_normalize_name(alias) for alias in candidate["aliases"]]]
-    candidate_names = [name for name in candidate_names if name]
-    best = 0
-    for needle in needles:
-        for candidate_name in candidate_names:
-            if candidate_name == needle:
-                best = max(best, 100)
-            elif needle and needle in candidate_name:
-                best = max(best, 85)
-            elif candidate_name and candidate_name in needle:
-                best = max(best, 70)
-    return best
-
-
-def resolve_backupradar_scope_by_company(context: dict, fetch_impl=None) -> dict:
-    config = context["backupradar"]
-    customer_resource = config["resources"]["customers"]
-    customers = [_normalize_customer(entry, customer_resource) for entry in _fetch_collection(config, customer_resource, fetch_impl=fetch_impl)]
-    scored = [
-        {
-            **candidate,
-            "score": _score_customer_match(context["company_name"], context["company_aliases"], candidate),
-        }
-        for candidate in customers
-    ]
-    matches = [candidate for candidate in scored if candidate["score"] > 0]
-    if not matches:
-        raise ValueError(f"No BackupRadar customer match found for '{context['company_name']}'.")
-    matches.sort(key=lambda entry: (-entry["score"], entry["customer_name"], entry["customer_id"]))
-    top = matches[0]
-    confidence = "high" if top["score"] >= 100 else "medium" if top["score"] >= 85 else "low"
+def _normalize_destination(record: dict) -> dict:
     return {
-        "resolved_scope": {
-            "backupradar": {
-                "customer_id": top["customer_id"],
-                "customer_name": top["customer_name"],
-            },
-        },
-        "match_confidence": confidence,
-        "top_candidates": [
-            {"customer_id": entry["customer_id"], "customer_name": entry["customer_name"], "score": entry["score"]}
-            for entry in matches[:3]
-        ],
+        "destination_id": _coerce_text(_first_present(record, ["id", "destination_id", "vault_id"])),
+        "destination_name": _coerce_text(_first_present(record, ["name", "destination_name", "vault_name"])) or "unknown-destination",
+        "type": _coerce_text(_first_present(record, ["type", "destination_type"])),
+        "raw": record,
     }
 
 
-def collect_backupradar_snapshot(context: dict, fetch_impl=None) -> dict:
-    config = context["backupradar"]
-    warnings: list[str] = []
-    resources = config["resources"]
-    collected_resources: dict[str, list[dict]] = {}
-    inventory: dict[str, dict] = {}
-    for resource_name, resource in resources.items():
-        query = _build_resource_query(resource, config["customer_id"], context["period"])
-        rows = _resolve_optional_collection(
-            config,
-            resource,
-            query,
-            required=resource_name in config["required_resources"],
-            warnings=warnings,
-            fetch_impl=fetch_impl,
-        )
-        collected_resources[resource_name] = rows
-        inventory[resource_name] = {"count_collected": len(rows)}
-    return {
-        "datasource": "backupradar",
-        "dataset": "backupradar_snapshot",
-        "collection_path": "fleet script",
-        "customer_name": config["customer_name"] or context["customer_name"],
-        "customer_id": config["customer_id"],
-        "report_family": context["report_family"],
-        "template_key": context["template_key"],
-        "period": context["period"],
-        "collected_at": context["generated_at"],
-        "scope": {
-            "tenant_id": config["tenant_id"],
-            "base_url": config["base_url"],
-            "customer_id": config["customer_id"],
-            "customer_name": config["customer_name"] or context["customer_name"],
-        },
-        "resource_paths": {
-            name: resource["path"]
-            for name, resource in resources.items()
-        },
-        "resources": collected_resources,
-        "inventory": inventory,
-        "warnings": warnings,
-    }
+def _index_by(items: list[dict], id_key: str, name_key: str) -> tuple[dict[str, dict], dict[str, dict]]:
+    by_id: dict[str, dict] = {}
+    by_name: dict[str, dict] = {}
+    for item in items:
+        item_id = _coerce_text(item.get(id_key))
+        item_name = _coerce_text(item.get(name_key))
+        if item_id:
+            by_id[item_id] = item
+        if item_name:
+            by_name[item_name] = item
+    return by_id, by_name
 
 
 def _normalize_status(value) -> str:
@@ -411,160 +347,6 @@ def _derive_review_flags(record: dict) -> dict:
         "is_reported": bool(is_reported),
         "is_checked": bool(is_checked),
         "review_text": review_text,
-    }
-
-
-def _normalize_device(record: dict) -> dict:
-    return {
-        "device_id": _coerce_text(_first_present(record, ["id", "device_id", "asset_id", "endpoint_id"])),
-        "device_name": _coerce_text(_first_present(record, ["name", "device_name", "asset_name", "endpoint_name", "hostname"])) or "unknown-device",
-        "site": _coerce_text(_first_present(record, ["site", "location", "group_name"])),
-        "platform": _coerce_text(_first_present(record, ["platform", "device_type", "type"])),
-        "raw": record,
-    }
-
-
-def _normalize_destination(record: dict) -> dict:
-    return {
-        "destination_id": _coerce_text(_first_present(record, ["id", "destination_id", "vault_id"])),
-        "destination_name": _coerce_text(_first_present(record, ["name", "destination_name", "vault_name"])) or "unknown-destination",
-        "type": _coerce_text(_first_present(record, ["type", "destination_type"])),
-        "raw": record,
-    }
-
-
-def _index_by(items: list[dict], id_key: str, name_key: str) -> tuple[dict[str, dict], dict[str, dict]]:
-    by_id: dict[str, dict] = {}
-    by_name: dict[str, dict] = {}
-    for item in items:
-        item_id = _coerce_text(item.get(id_key))
-        item_name = _coerce_text(item.get(name_key))
-        if item_id:
-            by_id[item_id] = item
-        if item_name:
-            by_name[item_name] = item
-    return by_id, by_name
-
-
-def _normalize_job(record: dict, device_by_id: dict[str, dict], device_by_name: dict[str, dict], destination_by_id: dict[str, dict], destination_by_name: dict[str, dict], customer_name: str) -> dict:
-    device_id = _coerce_text(_first_present(record, ["device_id", "asset_id", "endpoint_id", "deviceId"]))
-    device_name = _coerce_text(_first_present(record, ["device_name", "asset_name", "endpoint_name", "hostname"]))
-    destination_id = _coerce_text(_first_present(record, ["destination_id", "vault_id", "target_id"]))
-    destination_name = _coerce_text(_first_present(record, ["destination_name", "vault_name", "target_name"]))
-    device = device_by_id.get(device_id) or device_by_name.get(device_name) or {}
-    destination = destination_by_id.get(destination_id) or destination_by_name.get(destination_name) or {}
-    status = _normalize_status(_first_present(record, ["status", "result", "job_status", "state"]))
-    bytes_protected = _to_number(_first_present(record, ["bytes_protected", "protected_bytes", "size_bytes", "size"]), default=0)
-    job_at = _to_iso(_first_present(record, ["completed_at", "finished_at", "job_at", "timestamp", "run_at", "start_time", "date"]))
-    review_flags = _derive_review_flags(record)
-    return {
-        "job_id": _coerce_text(_first_present(record, ["id", "job_id", "backup_id"])) or "unknown-job",
-        "customer_name": customer_name,
-        "device_id": device_id or _coerce_text(device.get("device_id")),
-        "device_name": device_name or _coerce_text(device.get("device_name")) or "unknown-device",
-        "destination_id": destination_id or _coerce_text(destination.get("destination_id")),
-        "destination_name": destination_name or _coerce_text(destination.get("destination_name")) or "unknown-destination",
-        "status": status,
-        "job_at": job_at,
-        "last_success_at": _to_iso(_first_present(record, ["last_success_at", "previous_success_at"])),
-        "duration_seconds": _to_number(_first_present(record, ["duration_seconds", "duration", "elapsed_seconds"]), default=0),
-        "bytes_protected": bytes_protected,
-        "detail": _coerce_text(_first_present(record, ["message", "detail", "error_message", "notes"])),
-        "site": _coerce_text(device.get("site")),
-        "platform": _coerce_text(device.get("platform")),
-        "review_status": review_flags["review_status"],
-        "is_verified": review_flags["is_verified"],
-        "is_cleared": review_flags["is_cleared"],
-        "is_reported": review_flags["is_reported"],
-        "is_checked": review_flags["is_checked"],
-        "was_pending_and_cleared": (
-            status == "pending"
-            and (review_flags["is_checked"] or review_flags["is_cleared"] or ("pending" in review_flags["review_text"] and "cleared" in review_flags["review_text"]))
-        ),
-        "raw": record,
-    }
-
-
-def _normalize_alert(record: dict) -> dict:
-    review_flags = _derive_review_flags(record)
-    status = _normalize_status(_first_present(record, ["status", "state", "result"]))
-    severity = _coerce_text(_first_present(record, ["severity", "priority", "level"])) or status
-    return {
-        "alert_id": _coerce_text(_first_present(record, ["id", "alert_id", "issue_id", "exception_id"])) or "unknown-alert",
-        "status": status,
-        "severity": severity,
-        "entity_name": _coerce_text(_first_present(record, ["device_name", "source_name", "name", "title"])) or "unknown-entity",
-        "opened_at": _to_iso(_first_present(record, ["opened_at", "created_at", "date", "timestamp"])),
-        "cleared_at": _to_iso(_first_present(record, ["cleared_at", "resolved_at", "closed_at"])),
-        "detail": _coerce_text(_first_present(record, ["message", "detail", "notes", "description"])),
-        "review_status": review_flags["review_status"],
-        "is_verified": review_flags["is_verified"],
-        "is_cleared": review_flags["is_cleared"],
-        "is_reported": review_flags["is_reported"],
-        "raw": record,
-    }
-
-
-def _normalize_restore(record: dict, device_by_id: dict[str, dict], device_by_name: dict[str, dict], destination_by_id: dict[str, dict], destination_by_name: dict[str, dict]) -> dict:
-    device_id = _coerce_text(_first_present(record, ["device_id", "asset_id", "endpoint_id"]))
-    device_name = _coerce_text(_first_present(record, ["device_name", "asset_name", "endpoint_name", "hostname"]))
-    destination_id = _coerce_text(_first_present(record, ["destination_id", "vault_id", "target_id"]))
-    destination_name = _coerce_text(_first_present(record, ["destination_name", "vault_name", "target_name"]))
-    device = device_by_id.get(device_id) or device_by_name.get(device_name) or {}
-    destination = destination_by_id.get(destination_id) or destination_by_name.get(destination_name) or {}
-    status = _normalize_status(_first_present(record, ["status", "result", "restore_status", "state"]))
-    return {
-        "restore_id": _coerce_text(_first_present(record, ["id", "restore_id", "job_id"])) or "unknown-restore",
-        "device_name": device_name or _coerce_text(device.get("device_name")) or "unknown-device",
-        "destination_name": destination_name or _coerce_text(destination.get("destination_name")) or "unknown-destination",
-        "status": status,
-        "started_at": _to_iso(_first_present(record, ["started_at", "requested_at", "created_at"])),
-        "completed_at": _to_iso(_first_present(record, ["completed_at", "finished_at", "restored_at"])),
-        "detail": _coerce_text(_first_present(record, ["message", "detail", "notes", "error_message"])),
-        "raw": record,
-    }
-
-
-def _normalize_source(record: dict) -> dict:
-    status = _normalize_status(_first_present(record, ["status", "state", "health"]))
-    return {
-        "source_id": _coerce_text(_first_present(record, ["id", "source_id"])) or "unknown-source",
-        "source_name": _coerce_text(_first_present(record, ["name", "source_name", "provider_name"])) or "unknown-source",
-        "status": status,
-        "type": _coerce_text(_first_present(record, ["type", "provider", "source_type"])),
-        "is_enabled": _field_bool(record, ["enabled", "is_enabled", "active", "is_active"]) is not False,
-        "protected_item_count": int(_to_number(_first_present(record, ["protected_items", "protected_devices", "asset_count"]), default=0)),
-        "raw": record,
-    }
-
-
-def _normalize_policy(record: dict) -> dict:
-    return {
-        "policy_id": _coerce_text(_first_present(record, ["id", "policy_id"])) or "unknown-policy",
-        "policy_name": _coerce_text(_first_present(record, ["name", "policy_name", "schedule_name"])) or "unknown-policy",
-        "type": _coerce_text(_first_present(record, ["type", "policy_type"])),
-        "schedule": _coerce_text(_first_present(record, ["schedule", "frequency", "cron"])),
-        "is_enabled": _field_bool(record, ["enabled", "is_enabled", "active", "is_active"]) is not False,
-        "protected_item_count": int(_to_number(_first_present(record, ["protected_items", "protected_devices", "asset_count"]), default=0)),
-        "raw": record,
-    }
-
-
-def _normalize_vault(record: dict) -> dict:
-    capacity_bytes = int(_to_number(_first_present(record, ["capacity_bytes", "total_bytes", "size_bytes"]), default=0))
-    used_bytes = int(_to_number(_first_present(record, ["used_bytes", "consumed_bytes", "usage_bytes"]), default=0))
-    usage_percent = _to_number(_first_present(record, ["usage_percent", "used_percent"]), default=0)
-    if not usage_percent and capacity_bytes:
-        usage_percent = _round_value((used_bytes / capacity_bytes) * 100, 2)
-    return {
-        "vault_id": _coerce_text(_first_present(record, ["id", "vault_id"])) or "unknown-vault",
-        "vault_name": _coerce_text(_first_present(record, ["name", "vault_name", "destination_name"])) or "unknown-vault",
-        "type": _coerce_text(_first_present(record, ["type", "vault_type", "destination_type"])),
-        "status": _normalize_status(_first_present(record, ["status", "state", "health"])),
-        "capacity_bytes": capacity_bytes,
-        "used_bytes": used_bytes,
-        "usage_percent": usage_percent,
-        "raw": record,
     }
 
 
@@ -664,40 +446,338 @@ def _build_exception_rows(jobs: list[dict], limit: int = 25) -> list[dict]:
     return rows[:limit]
 
 
+# ---------------------------------------------------------------------------
+# BackupRadar API v2 — scope resolver
+# ---------------------------------------------------------------------------
+
+def resolve_backupradar_scope_by_company(context: dict, fetch_impl=None) -> dict:
+    """Resolve a company name to a BackupRadar customer scope.
+
+    BackupRadar API v2 has no /customers endpoint.  The resolver instead calls
+    /backups with no company filter to get all backup jobs, then extracts the
+    distinct companyName values and scores them against the requested company name.
+
+    The resolved customer_id is the matched companyName string — it is used as
+    the SearchByCompanyName value for all subsequent collection calls.
+    """
+    config = context["backupradar"]
+    # Use the 'backups' resource if configured, otherwise fall back to a minimal inline definition.
+    backups_resource = config["resources"].get("backups") or {
+        "path": "/backups",
+        "items_key": "Results",
+        "next_key": "",
+        "next_url_key": "",
+        "page_param": "Page",
+        "cursor_param": "",
+        "page_size_param": "Size",
+        "page_size": 1000,
+        "max_pages": 10,
+        "customer_filter_param": "",
+        "start_param": "",
+        "end_param": "",
+        "id_key": "backupId",
+        "name_key": "companyName",
+        "alias_keys": [],
+        "query": {},
+    }
+    # Fetch without company filter to discover all distinct company names.
+    discovery_resource = {**backups_resource, "customer_filter_param": "", "start_param": "", "end_param": ""}
+    all_jobs = _fetch_collection(config, discovery_resource, fetch_impl=fetch_impl)
+
+    # Collect distinct company names from results.
+    seen: dict[str, str] = {}   # normalised_name -> original companyName
+    for job in all_jobs:
+        company_raw = _coerce_text(job.get("companyName") or job.get("company_name") or "")
+        if company_raw:
+            seen[_normalize_name(company_raw)] = company_raw
+
+    if not seen:
+        raise ValueError(f"No BackupRadar companies found — cannot resolve '{context['company_name']}'.")
+
+    # Score each distinct company against the requested name + aliases.
+    needles = [_normalize_name(context["company_name"]), *[_normalize_name(a) for a in context.get("company_aliases", [])]]
+    needles = [n for n in needles if n]
+
+    best_score = 0
+    best_name = ""
+    candidates = []
+    for norm, original in seen.items():
+        score = 0
+        for needle in needles:
+            if norm == needle:
+                score = max(score, 100)
+            elif needle and needle in norm:
+                score = max(score, 85)
+            elif norm and norm in needle:
+                score = max(score, 70)
+        if score > 0:
+            candidates.append({"customer_id": original, "customer_name": original, "score": score})
+        if score > best_score:
+            best_score = score
+            best_name = original
+
+    if not candidates:
+        raise ValueError(f"No BackupRadar customer match found for '{context['company_name']}'.")
+
+    candidates.sort(key=lambda e: (-e["score"], e["customer_name"]))
+    top = candidates[0]
+    confidence = "high" if top["score"] >= 100 else "medium" if top["score"] >= 85 else "low"
+    return {
+        "resolved_scope": {
+            "backupradar": {
+                "customer_id": top["customer_name"],   # v2: customer_id IS the companyName string
+                "customer_name": top["customer_name"],
+            },
+        },
+        "match_confidence": confidence,
+        "top_candidates": candidates[:3],
+    }
+
+
+# ---------------------------------------------------------------------------
+# BackupRadar API v2 — snapshot collector
+# ---------------------------------------------------------------------------
+
+def collect_backupradar_snapshot(context: dict, fetch_impl=None) -> dict:
+    """Collect all configured BackupRadar resources for the customer.
+
+    BackupRadar API v2 notes:
+    - config["customer_id"] carries the resolved companyName string (set by the resolver).
+    - _build_resource_query uses it as the SearchByCompanyName value.
+    - Core resource is 'backups'; optional resources are 'backups_inactive',
+      'backups_retired', 'backups_overview', 'backups_filters'.
+    - Resources named 'customers', 'jobs', 'devices', 'destinations' do not exist
+      in v2 and will return 404 — they are treated as optional and silently skipped.
+    """
+    config = context["backupradar"]
+    warnings: list[str] = []
+    resources = config["resources"]
+    collected_resources: dict[str, list[dict]] = {}
+    inventory: dict[str, dict] = {}
+    for resource_name, resource in resources.items():
+        query = _build_resource_query(resource, config["customer_id"], context["period"])
+        rows = _resolve_optional_collection(
+            config,
+            resource,
+            query,
+            required=resource_name in config["required_resources"],
+            warnings=warnings,
+            fetch_impl=fetch_impl,
+        )
+        collected_resources[resource_name] = rows
+        inventory[resource_name] = {"count_collected": len(rows)}
+    return {
+        "datasource": "backupradar",
+        "dataset": "backupradar_snapshot",
+        "collection_path": "fleet script",
+        "customer_name": config["customer_name"] or context["customer_name"],
+        "customer_id": config["customer_id"],
+        "report_family": context["report_family"],
+        "template_key": context["template_key"],
+        "period": context["period"],
+        "collected_at": context["generated_at"],
+        "scope": {
+            "tenant_id": config["tenant_id"],
+            "base_url": config["base_url"],
+            "customer_id": config["customer_id"],
+            "customer_name": config["customer_name"] or context["customer_name"],
+        },
+        "resource_paths": {
+            name: resource["path"]
+            for name, resource in resources.items()
+        },
+        "resources": collected_resources,
+        "inventory": inventory,
+        "warnings": warnings,
+    }
+
+
+# ---------------------------------------------------------------------------
+# BackupRadar API v2 — v2 record normalizers
+# ---------------------------------------------------------------------------
+
+def _normalize_backup_v2(record: dict, customer_name: str) -> dict:
+    """Normalise a single BackupRadar API v2 /backups record into the standard job shape.
+
+    v2 field mapping:
+      backupId          -> job_id
+      companyName       -> customer_name
+      deviceName        -> device_name
+      deviceType.name   -> platform
+      jobName           -> destination_name  (job name used as logical destination label)
+      methodName        -> detail (backup method)
+      status.name       -> status  (Success / Failed / Warning / No Result)
+      lastResult        -> job_at
+      lastSuccess       -> last_success_at
+      isVerified        -> is_verified
+    """
+    raw_status = record.get("status") or {}
+    status_name = raw_status.get("name") if isinstance(raw_status, dict) else _coerce_text(raw_status)
+    status = _normalize_status(status_name or "")
+
+    raw_dtype = record.get("deviceType") or {}
+    platform = _coerce_text(raw_dtype.get("name") if isinstance(raw_dtype, dict) else raw_dtype)
+
+    is_verified = _coerce_bool(record.get("isVerified"))
+    return {
+        "job_id": _coerce_text(record.get("backupId")) or "unknown-job",
+        "customer_name": _coerce_text(record.get("companyName")) or customer_name,
+        "device_id": _coerce_text(record.get("backupId")),
+        "device_name": _coerce_text(record.get("deviceName")) or "unknown-device",
+        "destination_id": "",
+        "destination_name": _coerce_text(record.get("jobName")) or "unknown-job",
+        "status": status,
+        "job_at": _to_iso(record.get("lastResult")),
+        "last_success_at": _to_iso(record.get("lastSuccess")),
+        "duration_seconds": 0,
+        "bytes_protected": 0,
+        "detail": _coerce_text(record.get("methodName")),
+        "site": "",
+        "platform": platform,
+        "review_status": "",
+        "is_verified": bool(is_verified),
+        "is_cleared": bool(is_verified),
+        "is_reported": False,
+        "is_checked": bool(is_verified),
+        "was_pending_and_cleared": False,
+        "raw": record,
+    }
+
+
+def _expand_history_to_jobs(backup_records: list[dict], customer_name: str, period: dict) -> list[dict]:
+    """Expand per-job daily history arrays into individual day-level job records.
+
+    BackupRadar v2 /backups?HistoryDays=N embeds a history[] array on each job.
+    Each history entry carries countSuccess / countFailure / countWarning / countNoResult
+    for that day.  We expand these into synthetic job records so the rest of the
+    normalization pipeline (daily trend, device rollup, exception rows) works correctly.
+    """
+    period_start = period["start_iso"][:10]
+    period_end = period["end_iso"][:10]
+    expanded: list[dict] = []
+    for record in backup_records:
+        history = record.get("history") or []
+        device_name = _coerce_text(record.get("deviceName")) or "unknown-device"
+        job_name = _coerce_text(record.get("jobName")) or "unknown-job"
+        backup_id = _coerce_text(record.get("backupId")) or "unknown-job"
+        raw_dtype = record.get("deviceType") or {}
+        platform = _coerce_text(raw_dtype.get("name") if isinstance(raw_dtype, dict) else raw_dtype)
+        method = _coerce_text(record.get("methodName"))
+        customer = _coerce_text(record.get("companyName")) or customer_name
+        is_verified = bool(_coerce_bool(record.get("isVerified")))
+
+        if not history:
+            expanded.append(_normalize_backup_v2(record, customer_name))
+            continue
+
+        for day in history:
+            date_str = _coerce_text(day.get("date") or "")[:10]
+            if not date_str or date_str < period_start or date_str > period_end:
+                continue
+            counts = {
+                "success":   int(_to_number(day.get("countSuccess"), 0)),
+                "failed":    int(_to_number(day.get("countFailure"), 0)),
+                "warning":   int(_to_number(day.get("countWarning"), 0)),
+                "no_result": int(_to_number(day.get("countNoResult"), 0)),
+            }
+            for status_key, count in counts.items():
+                if count <= 0:
+                    continue
+                mapped_status = (
+                    "failed"  if status_key == "failed"    else
+                    "warning" if status_key == "warning"   else
+                    "unknown" if status_key == "no_result" else
+                    "success"
+                )
+                for _ in range(count):
+                    expanded.append({
+                        "job_id": backup_id,
+                        "customer_name": customer,
+                        "device_id": backup_id,
+                        "device_name": device_name,
+                        "destination_id": "",
+                        "destination_name": job_name,
+                        "status": mapped_status,
+                        "job_at": f"{date_str}T00:00:00Z",
+                        "last_success_at": _to_iso(record.get("lastSuccess")),
+                        "duration_seconds": 0,
+                        "bytes_protected": 0,
+                        "detail": method,
+                        "site": "",
+                        "platform": platform,
+                        "review_status": "",
+                        "is_verified": is_verified,
+                        "is_cleared": False,
+                        "is_reported": False,
+                        "is_checked": False,
+                        "was_pending_and_cleared": False,
+                        "raw": record,
+                    })
+    return expanded
+
+
+# ---------------------------------------------------------------------------
+# BackupRadar API v2 — snapshot normalizer
+# ---------------------------------------------------------------------------
+
 def normalize_backupradar_snapshot(context: dict, snapshot: dict) -> dict:
+    """Normalise a collected BackupRadar snapshot into the standard backup data model.
+
+    BackupRadar API v2 provides all data through /backups (and sub-routes).
+    There are no separate /devices, /destinations, /alerts, /restores, /sources,
+    /policies, or /vaults endpoints.  This function reads from:
+
+      resources['backups']           — active monitored backup jobs (with history if requested)
+      resources['backups_inactive']  — inactive/stale jobs (optional)
+      resources['backups_retired']   — retired jobs (optional)
+
+    All other resource keys (jobs, devices, destinations, alerts, etc.) are silently
+    ignored — they will be empty from the collector since v2 returns 404 for them.
+    """
     resources = snapshot.get("resources", {})
-    devices = [_normalize_device(entry) for entry in resources.get("devices", [])]
-    destinations = [_normalize_destination(entry) for entry in resources.get("destinations", [])]
+    customer_name = snapshot.get("customer_name") or context["customer_name"]
+
+    # All data in v2 comes from /backups and sub-routes.
+    raw_backups = resources.get("backups", [])
+
+    # Devices and destinations derived from backup records (no separate endpoints in v2).
+    devices = [
+        _normalize_device({
+            "id": r.get("backupId"),
+            "name": r.get("deviceName"),
+            "platform": (r.get("deviceType") or {}).get("name") if isinstance(r.get("deviceType"), dict) else r.get("deviceType"),
+        })
+        for r in raw_backups
+    ]
+    destinations = [
+        _normalize_destination({
+            "id": r.get("backupId"),
+            "name": r.get("jobName"),
+            "type": r.get("methodName"),
+        })
+        for r in raw_backups
+    ]
     device_by_id, device_by_name = _index_by(devices, "device_id", "device_name")
     destination_by_id, destination_by_name = _index_by(destinations, "destination_id", "destination_name")
-    jobs = [
-        _normalize_job(
-            entry,
-            device_by_id,
-            device_by_name,
-            destination_by_id,
-            destination_by_name,
-            snapshot.get("customer_name") or context["customer_name"],
-        )
-        for entry in resources.get("jobs", [])
-    ]
-    alerts = [
-        _normalize_alert(entry)
-        for resource_name in ("alerts", "issues", "exceptions")
-        for entry in resources.get(resource_name, [])
-    ]
-    restores = [
-        _normalize_restore(entry, device_by_id, device_by_name, destination_by_id, destination_by_name)
-        for entry in resources.get("restores", [])
-    ]
-    sources = [_normalize_source(entry) for entry in resources.get("sources", [])]
-    policies = [_normalize_policy(entry) for entry in resources.get("policies", [])]
-    vaults = [_normalize_vault(entry) for entry in resources.get("vaults", [])]
+
+    # Expand history into per-day job records for trend/rollup calculations.
+    jobs = _expand_history_to_jobs(raw_backups, customer_name, context["period"])
+    if not jobs:
+        jobs = [_normalize_backup_v2(r, customer_name) for r in raw_backups]
+
+    # v2 has no dedicated alert/restore/source/policy/vault endpoints.
+    alerts: list[dict] = []
+    restores: list[dict] = []
+    sources: list[dict] = []
+    policies: list[dict] = []
+    vaults: list[dict] = []
+
     totals = defaultdict(int)
     total_bytes_protected = 0
     for job in jobs:
         totals[job["status"]] += 1
         total_bytes_protected += int(_to_number(job["bytes_protected"], default=0))
+
     device_rollup = _build_device_rollup(jobs)
     destination_rollup = _build_destination_rollup(jobs)
     exception_rows = _build_exception_rows(jobs)
@@ -707,21 +787,22 @@ def normalize_backupradar_snapshot(context: dict, snapshot: dict) -> dict:
     warning_jobs_verified = len([job for job in jobs if job["status"] == "warning" and job["is_verified"]])
     warning_jobs_cleared = len([job for job in jobs if job["status"] == "warning" and job["is_cleared"]])
     successful_jobs_reported = len([job for job in jobs if job["status"] in {"success", "retried"} and job["is_reported"]])
-    open_alerts = len([alert for alert in alerts if not alert["is_cleared"]])
-    cleared_alerts = len([alert for alert in alerts if alert["is_cleared"]])
-    verified_alerts = len([alert for alert in alerts if alert["is_verified"]])
-    restore_failures = len([restore for restore in restores if restore["status"] in {"failed", "warning", "unknown"}])
-    disabled_sources = len([source for source in sources if not source["is_enabled"]])
-    unhealthy_sources = len([source for source in sources if source["status"] in {"failed", "warning", "pending", "running", "unknown"}])
-    disabled_policies = len([policy for policy in policies if not policy["is_enabled"]])
-    total_vault_capacity = sum(vault["capacity_bytes"] for vault in vaults)
-    total_vault_used = sum(vault["used_bytes"] for vault in vaults)
+    open_alerts = len([alert for alert in alerts if not alert.get("is_cleared")])
+    cleared_alerts = len([alert for alert in alerts if alert.get("is_cleared")])
+    verified_alerts = len([alert for alert in alerts if alert.get("is_verified")])
+    restore_failures = len([restore for restore in restores if restore.get("status") in {"failed", "warning", "unknown"}])
+    disabled_sources = len([source for source in sources if not source.get("is_enabled")])
+    unhealthy_sources = len([source for source in sources if source.get("status") in {"failed", "warning", "pending", "running", "unknown"}])
+    disabled_policies = len([policy for policy in policies if not policy.get("is_enabled")])
+    total_vault_capacity = sum(vault.get("capacity_bytes", 0) for vault in vaults)
+    total_vault_used = sum(vault.get("used_bytes", 0) for vault in vaults)
     resource_counts = {name: len(entries) for name, entries in resources.items()}
+
     return {
         "datasource": "backupradar",
         "dataset": "backup",
         "collection_path": "fleet script",
-        "customer_name": snapshot.get("customer_name") or context["customer_name"],
+        "customer_name": customer_name,
         "customer_id": snapshot.get("customer_id") or context["backupradar"]["customer_id"],
         "report_family": context["report_family"],
         "template_key": context["template_key"],

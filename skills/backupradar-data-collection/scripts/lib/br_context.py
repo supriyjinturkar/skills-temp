@@ -112,35 +112,41 @@ def _resolve_backupradar_base_context(raw_context: dict, env: dict[str, str] | N
     period_label = _build_period_label(start_iso, end_iso, raw_period.get("label"))
     raw_scope = (raw_context.get("source_scope") or {}).get("backupradar") or raw_context.get("backupradar") or {}
     raw_resources = raw_scope.get("resources") if isinstance(raw_scope.get("resources"), dict) else {}
+
+    # BackupRadar API v2 defaults (API v1 retired 2026-01-09).
+    # All endpoints live under /backups.  Customer scoping uses SearchByCompanyName.
+    # Auth header is ApiKey (not x-api-key).  Pagination uses Page / Size.
+    # The 'date' param is a single as-of reference date (period end), not a range.
     defaults = {
-        "items_key": "",
+        "items_key": "Results",               # v2 envelope key
         "next_key": "",
         "next_url_key": "",
-        "page_param": "",
+        "page_param": "Page",                 # v2 pagination (1-based)
         "cursor_param": "",
-        "page_size_param": "",
-        "page_size": 200,
+        "page_size_param": "Size",            # v2 pagination (max 1000)
+        "page_size": 1000,
         "max_pages": 10,
-        "customer_filter_param": "customer_id",
-        "start_param": "start_date",
-        "end_param": "end_date",
+        "customer_filter_param": "SearchByCompanyName",  # v2 customer scoping
+        "start_param": "date",                # v2 as-of reference date (use period end)
+        "end_param": "",                      # v2 has no range end param
     }
+
+    # BackupRadar API v2 — confirmed routes from https://api.backupradar.com/docs/2.0
+    # Endpoints that do NOT exist in v2 (all return 404):
+    #   /customers, /jobs, /devices, /destinations, /alerts, /issues,
+    #   /exceptions, /restores, /sources, /policies, /vaults, /reports
     core_resource_defaults = {
-        "customers": "/customers",
-        "jobs": "/jobs",
-        "devices": "/devices",
-        "destinations": "/destinations",
+        "backups":          "/backups",
+        "backups_inactive": "/backups/inactive",
+        "backups_retired":  "/backups/retired",
+        "backups_overview": "/backups/overview",
+        "backups_filters":  "/backups/filters",
     }
     optional_resource_defaults = {
-        "alerts": "/alerts",
-        "issues": "/issues",
-        "exceptions": "/exceptions",
-        "restores": "/restores",
-        "sources": "/sources",
-        "policies": "/policies",
-        "vaults": "/vaults",
-        "reports": "/reports",
+        # No additional resource routes exist in BackupRadar API v2.
+        # Kept empty to prevent 404s from old /customers /jobs /devices paths.
     }
+
     resources = {
         name: _resolve_resource(raw_resources, name, default_path, defaults)
         for name, default_path in core_resource_defaults.items()
@@ -153,7 +159,8 @@ def _resolve_backupradar_base_context(raw_context: dict, env: dict[str, str] | N
         if name in resources:
             continue
         resources[name] = _resolve_resource(raw_resources, name, f"/{name}", defaults)
-    required_resources = _parse_string_array(raw_scope.get("required_resources") or "jobs")
+
+    required_resources = _parse_string_array(raw_scope.get("required_resources") or "backups")
     api_key = _first_non_empty(
         (raw_context.get("credentials") or {}).get("backupradar", {}).get("api_key"),
         raw_scope.get("api_key"),
@@ -163,7 +170,7 @@ def _resolve_backupradar_base_context(raw_context: dict, env: dict[str, str] | N
         "tenant_id": str(raw_scope.get("tenant_id") or "backupradar").strip() or "backupradar",
         "base_url": str(raw_scope.get("base_url") or env.get("BACKUPRADAR_BASE_URL") or "https://api.backupradar.com").strip(),
         "auth_mode": str(raw_scope.get("auth_mode") or "api_key").strip().lower() or "api_key",
-        "auth_header": str(raw_scope.get("auth_header") or "x-api-key").strip() or "x-api-key",
+        "auth_header": str(raw_scope.get("auth_header") or "ApiKey").strip() or "ApiKey",
         "api_key": api_key,
         "customer_id": str(raw_scope.get("customer_id") or raw_scope.get("client_id") or "").strip(),
         "customer_name": str(raw_scope.get("customer_name") or "").strip(),
@@ -172,7 +179,7 @@ def _resolve_backupradar_base_context(raw_context: dict, env: dict[str, str] | N
         "request_retry_attempts": _parse_int(raw_scope.get("request_retry_attempts"), 3),
         "request_retry_backoff_ms": _parse_int(raw_scope.get("request_retry_backoff_ms"), 1000),
         "resources": resources,
-        "required_resources": required_resources or ["jobs"],
+        "required_resources": required_resources or ["backups"],
     }
     return {
         "customer_id": customer_id,

@@ -19,115 +19,106 @@ from br_io import resolve_run_paths
 from br_pipeline import resolve_backupradar_scope_by_company, run_backupradar_pipeline
 
 
+# ---------------------------------------------------------------------------
+# Fixtures — BackupRadar API v2 response shapes
+# ---------------------------------------------------------------------------
+
 def backupradar_fixtures():
+    """Return mock v2 API payloads keyed by endpoint path suffix."""
     return {
-        "customers": [
-            {"id": "12345", "name": "Customer B", "aliases": ["Customer Bee"]},
-            {"id": "99999", "name": "Shared Tenant Customer"},
-        ],
-        "jobs": [
-            {
-                "id": "job-1",
-                "device_id": "dev-1",
-                "device_name": "cust-b-sql-01",
-                "destination_id": "vault-1",
-                "destination_name": "Azure Vault",
-                "status": "Success",
-                "completed_at": "2026-07-02T01:00:00Z",
-                "bytes_protected": 1000000000,
-                "reported_at": "2026-07-02T02:00:00Z",
-            },
-            {
-                "id": "job-2",
-                "device_id": "dev-2",
-                "device_name": "cust-b-fs-01",
-                "destination_id": "vault-1",
-                "destination_name": "Azure Vault",
-                "status": "Failed",
-                "completed_at": "2026-07-04T01:30:00Z",
-                "message": "Storage quota exceeded",
-            },
-            {
-                "id": "job-3",
-                "device_id": "dev-2",
-                "device_name": "cust-b-fs-01",
-                "destination_id": "vault-1",
-                "destination_name": "Azure Vault",
-                "status": "Retried",
-                "completed_at": "2026-07-05T01:40:00Z",
-                "message": "Recovered after retry",
-            },
-            {
-                "id": "job-4",
-                "device_id": "dev-4",
-                "device_name": "cust-b-queue-01",
-                "destination_id": "vault-2",
-                "destination_name": "Local Appliance",
-                "status": "Pending",
-                "completed_at": "2026-07-07T03:15:00Z",
-                "review_status": "Pending backups checked and cleared",
-                "checked": True,
-                "cleared": True,
-            },
-            {
-                "id": "job-5",
-                "device_id": "dev-3",
-                "device_name": "cust-b-app-01",
-                "destination_id": "vault-2",
-                "destination_name": "Local Appliance",
-                "status": "Warning",
-                "completed_at": "2026-07-09T03:15:00Z",
-                "message": "Completed with warnings",
-                "verified": True,
-                "cleared": True,
-            },
-            {
-                "id": "job-6",
-                "device_id": "dev-1",
-                "device_name": "cust-b-sql-01",
-                "destination_id": "vault-1",
-                "destination_name": "Azure Vault",
-                "status": "Success",
-                "completed_at": "2026-07-11T02:00:00Z",
-                "bytes_protected": 2500000000,
-            },
-        ],
-        "devices": [
-            {"id": "dev-1", "name": "cust-b-sql-01", "site": "Primary DC", "platform": "Windows"},
-            {"id": "dev-2", "name": "cust-b-fs-01", "site": "Primary DC", "platform": "Windows"},
-            {"id": "dev-3", "name": "cust-b-app-01", "site": "Regional Site", "platform": "Linux"},
-            {"id": "dev-4", "name": "cust-b-queue-01", "site": "Regional Site", "platform": "Windows"},
-        ],
-        "destinations": [
-            {"id": "vault-1", "name": "Azure Vault", "type": "cloud"},
-            {"id": "vault-2", "name": "Local Appliance", "type": "appliance"},
-        ],
-        "alerts": [
-            {"id": "alert-1", "name": "Pending review alert", "status": "Pending", "created_at": "2026-07-08T00:00:00Z"},
-            {"id": "alert-2", "name": "Warning verified", "status": "Warning", "verified": True, "cleared": True, "resolved_at": "2026-07-08T04:00:00Z"},
-        ],
-        "restores": [
-            {"id": "restore-1", "device_id": "dev-1", "destination_id": "vault-1", "status": "Success", "completed_at": "2026-07-12T02:00:00Z"},
-            {"id": "restore-2", "device_id": "dev-2", "destination_id": "vault-1", "status": "Failed", "completed_at": "2026-07-12T03:00:00Z", "message": "Restore validation failed"},
-        ],
-        "sources": [
-            {"id": "source-1", "name": "M365", "status": "Healthy", "enabled": True, "protected_devices": 120},
-            {"id": "source-2", "name": "NAS", "status": "Warning", "enabled": False, "protected_devices": 12},
-        ],
-        "policies": [
-            {"id": "policy-1", "name": "Daily Servers", "enabled": True, "protected_devices": 80},
-            {"id": "policy-2", "name": "Weekly Archive", "enabled": False, "protected_devices": 20},
-        ],
-        "vaults": [
-            {"id": "vault-1", "name": "Azure Vault", "capacity_bytes": 10000000000, "used_bytes": 6500000000},
-            {"id": "vault-2", "name": "Local Appliance", "capacity_bytes": 5000000000, "used_bytes": 2000000000},
-        ],
+        "backups": {
+            "Total": 4,
+            "Page": 1,
+            "PageSize": 1000,
+            "TotalPages": 1,
+            "Results": [
+                {
+                    "backupId": "job-1",
+                    "companyName": "Customer B",
+                    "deviceName": "cust-b-sql-01",
+                    "deviceType": {"id": 1, "name": "Server"},
+                    "jobName": "Customer B Servers SOBR",
+                    "methodName": "Veeam",
+                    "status": {"id": 1, "name": "Success"},
+                    "lastResult": "2026-07-11T02:00:00Z",
+                    "lastSuccess": "2026-07-11T02:00:00Z",
+                    "isVerified": True,
+                    "ticketCount": 0,
+                    "tags": [],
+                    "history": [
+                        {"date": "2026-07-01T00:00:00", "countSuccess": 1, "countFailure": 0, "countWarning": 0, "countNoResult": 0},
+                        {"date": "2026-07-02T00:00:00", "countSuccess": 1, "countFailure": 0, "countWarning": 0, "countNoResult": 0},
+                        {"date": "2026-07-04T00:00:00", "countSuccess": 0, "countFailure": 1, "countWarning": 0, "countNoResult": 0},
+                        {"date": "2026-07-11T00:00:00", "countSuccess": 1, "countFailure": 0, "countWarning": 0, "countNoResult": 0},
+                    ],
+                },
+                {
+                    "backupId": "job-2",
+                    "companyName": "Customer B",
+                    "deviceName": "cust-b-fs-01",
+                    "deviceType": {"id": 1, "name": "Server"},
+                    "jobName": "Customer B Servers SOBR",
+                    "methodName": "Veeam",
+                    "status": {"id": 1, "name": "Success"},
+                    "lastResult": "2026-07-05T01:40:00Z",
+                    "lastSuccess": "2026-07-05T01:40:00Z",
+                    "isVerified": False,
+                    "ticketCount": 0,
+                    "tags": [],
+                    "history": [
+                        {"date": "2026-07-05T00:00:00", "countSuccess": 1, "countFailure": 0, "countWarning": 0, "countNoResult": 0},
+                        {"date": "2026-07-07T00:00:00", "countSuccess": 0, "countFailure": 0, "countWarning": 1, "countNoResult": 0},
+                    ],
+                },
+                {
+                    "backupId": "job-3",
+                    "companyName": "Customer B",
+                    "deviceName": "cust-b-app-01",
+                    "deviceType": {"id": 3, "name": "Azure VM"},
+                    "jobName": "production_backups",
+                    "methodName": "Veeam",
+                    "status": {"id": 1, "name": "Success"},
+                    "lastResult": "2026-07-09T03:15:00Z",
+                    "lastSuccess": "2026-07-09T03:15:00Z",
+                    "isVerified": True,
+                    "ticketCount": 0,
+                    "tags": [],
+                    "history": [
+                        {"date": "2026-07-09T00:00:00", "countSuccess": 1, "countFailure": 0, "countWarning": 0, "countNoResult": 0},
+                    ],
+                },
+                {
+                    # Different company — must NOT appear in Customer B scoped results
+                    "backupId": "job-x",
+                    "companyName": "Other Company",
+                    "deviceName": "other-server",
+                    "deviceType": {"id": 1, "name": "Server"},
+                    "jobName": "Other SOBR",
+                    "methodName": "Veeam",
+                    "status": {"id": 1, "name": "Success"},
+                    "lastResult": "2026-07-09T00:00:00Z",
+                    "lastSuccess": "2026-07-09T00:00:00Z",
+                    "isVerified": False,
+                    "ticketCount": 0,
+                    "tags": [],
+                    "history": [],
+                },
+            ],
+        },
+        "backups_inactive": {
+            "Total": 0, "Page": 1, "PageSize": 1000, "TotalPages": 1, "Results": [],
+        },
+        "backups_overview": {
+            "backups": 4, "office365": 0, "workstations": 0,
+            "activePolicies": 10, "inactivePolicies": 2, "retiredPolicies": 5,
+        },
     }
 
 
 def build_raw_context():
+    """v2-compatible customer context with customer_id pre-resolved."""
     return {
-        "customer_id": "customer-b",
+        "company_name": "Customer B",
         "customer_name": "Customer B",
         "report_family": "monthly-service-review",
         "template_key": "operations-v1",
@@ -141,22 +132,62 @@ def build_raw_context():
                 "tenant_id": "nexon-backupradar",
                 "base_url": "https://api.backupradar.com",
                 "auth_mode": "api_key",
-                "customer_id": "12345",
+                "auth_header": "ApiKey",
+                # customer_id is the resolved companyName string in v2
+                "customer_id": "Customer B",
+                "customer_name": "Customer B",
                 "resources": {
-                    "customers": {"path": "/customers"},
-                    "jobs": {
-                        "path": "/jobs",
-                        "customer_filter_param": "customer_id",
-                        "start_param": "start_date",
-                        "end_param": "end_date",
+                    "backups": {
+                        "path": "/backups",
+                        "customer_filter_param": "SearchByCompanyName",
+                        "start_param": "date",
+                        "end_param": "",
+                        "page_param": "Page",
+                        "page_size_param": "Size",
+                        "page_size": 1000,
+                        "query": {"HistoryDays": 30},
                     },
-                    "devices": {"path": "/devices", "customer_filter_param": "customer_id"},
-                    "destinations": {"path": "/destinations", "customer_filter_param": "customer_id"},
-                    "alerts": {"path": "/alerts", "customer_filter_param": "customer_id", "start_param": "start_date", "end_param": "end_date"},
-                    "restores": {"path": "/restores", "customer_filter_param": "customer_id", "start_param": "start_date", "end_param": "end_date"},
-                    "sources": {"path": "/sources", "customer_filter_param": "customer_id"},
-                    "policies": {"path": "/policies", "customer_filter_param": "customer_id"},
-                    "vaults": {"path": "/vaults", "customer_filter_param": "customer_id"},
+                    "backups_inactive": {
+                        "path": "/backups/inactive",
+                        "customer_filter_param": "SearchByCompanyName",
+                        "page_param": "Page",
+                        "page_size_param": "Size",
+                        "page_size": 1000,
+                    },
+                    "backups_overview": {
+                        "path": "/backups/overview",
+                    },
+                },
+            },
+        },
+    }
+
+
+def build_lookup_raw_context():
+    """Context for the resolver — no customer_id yet, unscoped discovery enabled."""
+    return {
+        "company_name": "Customer B",
+        "customer_name": "Customer B",
+        "period": {
+            "start": "2026-07-01T00:00:00Z",
+            "end": "2026-07-31T23:59:59Z",
+        },
+        "source_scope": {
+            "backupradar": {
+                "base_url": "https://api.backupradar.com",
+                "auth_mode": "api_key",
+                "auth_header": "ApiKey",
+                "allow_unscoped_collection": True,
+                "resources": {
+                    "backups": {
+                        "path": "/backups",
+                        "customer_filter_param": "SearchByCompanyName",
+                        "start_param": "date",
+                        "end_param": "",
+                        "page_param": "Page",
+                        "page_size_param": "Size",
+                        "page_size": 1000,
+                    },
                 },
             },
         },
@@ -164,6 +195,7 @@ def build_raw_context():
 
 
 def create_fetch_mock():
+    """Return a fetch_impl that serves v2 fixture data based on URL path."""
     fixture = backupradar_fixtures()
 
     def fetch_impl(method, url, headers, body):
@@ -172,37 +204,51 @@ def create_fetch_mock():
         parsed = urlparse(url)
         path_value = parsed.path
         query = dict(parse_qsl(parsed.query))
-        if path_value.endswith("/customers"):
-            if query.get("customer_id") == "12345":
-                return 200, {}, json.dumps({"items": [fixture["customers"][0]]})
-            return 200, {}, json.dumps({"items": fixture["customers"]})
-        if path_value.endswith("/jobs"):
-            if query.get("customer_id") != "12345":
-                raise AssertionError(f"Unexpected customer filter for jobs: {query}")
-            return 200, {}, json.dumps({"items": fixture["jobs"]})
-        if path_value.endswith("/devices"):
-            return 200, {}, json.dumps({"items": fixture["devices"]})
-        if path_value.endswith("/destinations"):
-            return 200, {}, json.dumps({"items": fixture["destinations"]})
-        if path_value.endswith("/alerts"):
-            return 200, {}, json.dumps({"items": fixture["alerts"]})
-        if path_value.endswith("/restores"):
-            return 200, {}, json.dumps({"items": fixture["restores"]})
-        if path_value.endswith("/sources"):
-            return 200, {}, json.dumps({"items": fixture["sources"]})
-        if path_value.endswith("/policies"):
-            return 200, {}, json.dumps({"items": fixture["policies"]})
-        if path_value.endswith("/vaults"):
-            return 200, {}, json.dumps({"items": fixture["vaults"]})
-        raise AssertionError(f"Unhandled URL {url}")
+
+        # GET /backups/retired
+        if path_value.endswith("/backups/retired"):
+            return 200, {}, json.dumps({"Total": 0, "Page": 1, "PageSize": 1000, "TotalPages": 1, "Results": []})
+
+        # GET /backups/filters
+        if path_value.endswith("/backups/filters"):
+            return 200, {}, json.dumps({})
+
+        # GET /backups/overview  (must check before /backups to avoid prefix match)
+        if path_value.endswith("/backups/overview"):
+            return 200, {}, json.dumps(fixture["backups_overview"])
+
+        # GET /backups/inactive
+        if path_value.endswith("/backups/inactive"):
+            return 200, {}, json.dumps(fixture["backups_inactive"])
+
+        # GET /backups  (scoped or unscoped)
+        if path_value.endswith("/backups"):
+            company_filter = query.get("SearchByCompanyName", "")
+            all_results = fixture["backups"]["Results"]
+            scoped = [r for r in all_results if r.get("companyName") == company_filter] if company_filter else all_results
+            payload = {**fixture["backups"], "Results": scoped, "Total": len(scoped)}
+            return 200, {}, json.dumps(payload)
+
+        raise AssertionError(f"Unhandled URL in v2 mock: {url}")
 
     return fetch_impl
 
 
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
+
 class BackupRadarFleetScriptsTest(unittest.TestCase):
+
     def test_context_parser_preserves_flags(self):
         self.assertEqual(
-            parse_cli_args(["--context", "ctx.json", "--run-dir", "run-a", "--snapshot", "snap.json", "--normalized", "norm.json", "--output", "out.json"]),
+            parse_cli_args([
+                "--context", "ctx.json",
+                "--run-dir", "run-a",
+                "--snapshot", "snap.json",
+                "--normalized", "norm.json",
+                "--output", "out.json",
+            ]),
             {
                 "context_path": "ctx.json",
                 "run_dir": "run-a",
@@ -213,70 +259,102 @@ class BackupRadarFleetScriptsTest(unittest.TestCase):
         )
 
     def test_context_requires_customer_scope(self):
+        """resolve_backupradar_context must raise if customer_id is missing and unscoped not allowed."""
         with self.assertRaisesRegex(ValueError, "customer_id"):
             resolve_backupradar_context(
                 {
                     "customer_id": "x",
                     "customer_name": "X",
                     "period": {"start": "2026-07-01T00:00:00Z", "end": "2026-07-02T00:00:00Z"},
-                    "source_scope": {"backupradar": {"base_url": "https://api.backupradar.com"}},
+                    "source_scope": {
+                        "backupradar": {
+                            "base_url": "https://api.backupradar.com",
+                            "auth_header": "ApiKey",
+                        }
+                    },
                 },
                 env={"BACKUPRADAR_API_KEY": "token"},
             )
 
+    def test_context_defaults_use_v2_settings(self):
+        """Default auth_header must be ApiKey and required_resources must include backups."""
+        ctx = resolve_backupradar_context(
+            build_raw_context(),
+            env={"BACKUPRADAR_API_KEY": "token"},
+            now=datetime(2026, 8, 1, 10, 0, tzinfo=timezone.utc),
+        )
+        br = ctx["backupradar"]
+        self.assertEqual(br["auth_header"], "ApiKey")
+        self.assertIn("backups", br["required_resources"])
+        self.assertNotIn("jobs", br["required_resources"])
+        self.assertIn("backups", br["resources"])
+        self.assertNotIn("customers", br["resources"])
+        self.assertNotIn("jobs", br["resources"])
+
     def test_pipeline_produces_scoped_artifacts(self):
+        """Full pipeline run with v2 mock — verify counts, datasets, and bundle sections."""
         context = resolve_backupradar_context(
             build_raw_context(),
             env={"BACKUPRADAR_API_KEY": "token"},
             now=datetime(2026, 8, 1, 10, 0, tzinfo=timezone.utc),
         )
         result = run_backupradar_pipeline(context, fetch_impl=create_fetch_mock())
+
+        # Snapshot
         self.assertEqual(result["snapshot"]["dataset"], "backupradar_snapshot")
-        self.assertEqual(result["snapshot"]["inventory"]["jobs"]["count_collected"], 6)
-        self.assertEqual(result["snapshot"]["inventory"]["alerts"]["count_collected"], 2)
-        self.assertEqual(result["backup"]["dataset"], "backup")
-        self.assertEqual(result["backup"]["totals"]["jobs"], 6)
-        self.assertEqual(result["backup"]["totals"]["failed_jobs"], 1)
-        self.assertEqual(result["backup"]["totals"]["pending_jobs"], 1)
-        self.assertEqual(result["backup"]["totals"]["pending_jobs_cleared"], 1)
-        self.assertEqual(result["backup"]["totals"]["warning_jobs_verified"], 1)
-        self.assertEqual(result["backup"]["totals"]["warning_jobs_cleared"], 1)
-        self.assertEqual(result["backup"]["totals"]["successful_jobs_reported"], 1)
-        self.assertEqual(result["backup"]["totals"]["restore_jobs"], 2)
-        self.assertEqual(result["backup"]["totals"]["restore_failed_jobs"], 1)
-        self.assertEqual(result["backup"]["totals"]["source_count"], 2)
-        self.assertEqual(result["backup"]["totals"]["policy_count"], 2)
-        self.assertEqual(result["backup"]["totals"]["vault_count"], 2)
+        self.assertGreater(result["snapshot"]["inventory"]["backups"]["count_collected"], 0)
+
+        # History expansion:
+        # job-1: 4 history days (1S, 1S, 1F, 1S) = 4 records
+        # job-2: 2 history days (1S, 1W) = 2 records
+        # job-3: 1 history day  (1S) = 1 record
+        # Total for Customer B = 7
+        backup = result["backup"]
+        self.assertEqual(backup["dataset"], "backup")
+        self.assertEqual(backup["totals"]["jobs"], 7)
+        self.assertEqual(backup["totals"]["success_jobs"], 5)
+        self.assertEqual(backup["totals"]["failed_jobs"], 1)
+        self.assertEqual(backup["totals"]["warning_jobs"], 1)
+
         self.assertEqual(result["backup_summary"]["dataset"], "backup_summary")
         self.assertEqual(result["backup_trends"]["dataset"], "backup_trends")
-        self.assertEqual(result["backup_exceptions"]["exception_count"], 3)
-        self.assertEqual(result["bundle"]["dataset"], "backupradar_report_bundle")
-        self.assertEqual(result["bundle"]["sections"]["source_inventory_summary"]["devices"], 4)
-        self.assertEqual(result["bundle"]["sections"]["source_inventory_summary"]["alerts"], 2)
-        self.assertEqual(result["bundle"]["sections"]["backup_operational_outcomes"]["pending_jobs_cleared"], 1)
+        self.assertIn("daily_status_counts", result["backup_trends"])
 
-    def test_company_name_resolver_builds_customer_scope(self):
+        # failed + warning = 2 non-success records → 2 exception rows
+        self.assertEqual(result["backup_exceptions"]["exception_count"], 2)
+
+        bundle = result["bundle"]
+        self.assertEqual(bundle["dataset"], "backupradar_report_bundle")
+        self.assertIn("backup_summary", bundle["sections"])
+        self.assertIn("backup_trends", bundle["sections"])
+        self.assertIn("backup_operational_outcomes", bundle["sections"])
+
+    def test_company_name_resolver_discovers_from_backups(self):
+        """Resolver must discover Customer B from /backups companyName (no /customers endpoint)."""
         lookup_context = resolve_backupradar_lookup_context(
-            {
-                "company_name": "Customer B",
-                "customer_name": "Customer B",
-                "period": {"start": "2026-07-01T00:00:00Z", "end": "2026-07-31T23:59:59Z"},
-                "source_scope": {
-                    "backupradar": {
-                        "base_url": "https://api.backupradar.com",
-                        "auth_mode": "api_key",
-                        "resources": {"customers": {"path": "/customers"}},
-                    },
-                },
-            },
+            build_lookup_raw_context(),
             env={"BACKUPRADAR_API_KEY": "token"},
         )
         resolution = resolve_backupradar_scope_by_company(lookup_context, fetch_impl=create_fetch_mock())
         self.assertEqual(resolution["match_confidence"], "high")
-        self.assertEqual(resolution["resolved_scope"]["backupradar"]["customer_id"], "12345")
+        # In v2, customer_id is the matched companyName string
+        self.assertEqual(resolution["resolved_scope"]["backupradar"]["customer_id"], "Customer B")
         self.assertEqual(resolution["resolved_scope"]["backupradar"]["customer_name"], "Customer B")
 
+    def test_scoped_collection_filters_by_company(self):
+        """Jobs from 'Other Company' must not appear in a Customer B scoped run."""
+        context = resolve_backupradar_context(
+            build_raw_context(),
+            env={"BACKUPRADAR_API_KEY": "token"},
+            now=datetime(2026, 8, 1, 10, 0, tzinfo=timezone.utc),
+        )
+        result = run_backupradar_pipeline(context, fetch_impl=create_fetch_mock())
+        customer_names = {j["customer_name"] for j in result["backup"]["jobs"]}
+        self.assertNotIn("Other Company", customer_names)
+        self.assertIn("Customer B", customer_names)
+
     def test_cli_steps_write_expected_files(self):
+        """normalize and bundle CLI scripts must produce valid output files."""
         context = resolve_backupradar_context(
             build_raw_context(),
             env={"BACKUPRADAR_API_KEY": "token"},
@@ -287,32 +365,30 @@ class BackupRadarFleetScriptsTest(unittest.TestCase):
             root_path = Path(root)
             context_path = root_path / "customer_context.json"
             run_dir = root_path / "run"
-            context_path.write_text(f"{json.dumps(build_raw_context(), indent=2)}\n", encoding="utf-8")
+            context_path.write_text(
+                f"{json.dumps(build_raw_context(), indent=2)}\n", encoding="utf-8"
+            )
             run_paths = resolve_run_paths(run_dir)
             Path(run_paths["backupradar_snapshot_file"]).parent.mkdir(parents=True, exist_ok=True)
             Path(run_paths["backupradar_snapshot_file"]).write_text(
-                f"{json.dumps(pipeline['snapshot'], indent=2)}\n",
-                encoding="utf-8",
+                f"{json.dumps(pipeline['snapshot'], indent=2)}\n", encoding="utf-8"
             )
             env = {**os.environ, "BACKUPRADAR_API_KEY": "token"}
+
             normalize = subprocess.run(
-                [sys.executable, str(CURRENT_DIR / "normalize_backupradar_collection.py"), "--context", str(context_path), "--run-dir", str(run_dir)],
-                cwd=root,
-                capture_output=True,
-                text=True,
-                env=env,
-                check=False,
+                [sys.executable, str(CURRENT_DIR / "normalize_backupradar_collection.py"),
+                 "--context", str(context_path), "--run-dir", str(run_dir)],
+                cwd=root, capture_output=True, text=True, env=env, check=False,
             )
             self.assertEqual(normalize.returncode, 0, normalize.stderr)
-            bundle = subprocess.run(
-                [sys.executable, str(CURRENT_DIR / "build_backupradar_report_bundle.py"), "--context", str(context_path), "--run-dir", str(run_dir)],
-                cwd=root,
-                capture_output=True,
-                text=True,
-                env=env,
-                check=False,
+
+            bundle_proc = subprocess.run(
+                [sys.executable, str(CURRENT_DIR / "build_backupradar_report_bundle.py"),
+                 "--context", str(context_path), "--run-dir", str(run_dir)],
+                cwd=root, capture_output=True, text=True, env=env, check=False,
             )
-            self.assertEqual(bundle.returncode, 0, bundle.stderr)
+            self.assertEqual(bundle_proc.returncode, 0, bundle_proc.stderr)
+
             backup = json.loads(Path(run_paths["backup_file"]).read_text(encoding="utf-8"))
             report_bundle = json.loads(Path(run_paths["backupradar_bundle_file"]).read_text(encoding="utf-8"))
             self.assertEqual(backup["dataset"], "backup")

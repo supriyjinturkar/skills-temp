@@ -1,6 +1,7 @@
 ---
 name: logicmonitor-data-collection
 description: Use when a LangSmith Fleet agent needs to resolve customer scope, collect customer-scoped LogicMonitor data, normalize it, or build a reusable Nexon report bundle from the shared LogicMonitor tenant.
+version: 1.5.0
 ---
 
 # Nexon LogicMonitor Data Collection - Fleet

@@ -126,7 +126,8 @@ def _load_json(body: str):
 def _request_json(config: dict, url: str, fetch_impl=None):
     headers = {
         "Accept": "application/json",
-        config["auth_header"]: config["api_key"],
+        # ApiKey auth is injected by the nexon-backupradar-api sandbox
+        # Access Profile proxy — do not set it here.
     }
     attempts = max(int(config["request_retry_attempts"]), 1)
     timeout = int(config["request_timeout_seconds"])

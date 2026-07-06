@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import os
 from datetime import datetime, timezone
 
 from br_io import read_json_file
@@ -39,11 +38,6 @@ def _parse_int(value, default: int) -> int:
     return parsed if parsed > 0 else default
 
 
-def _first_non_empty(*values) -> str:
-    for value in values:
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-    return ""
 
 
 def _build_period_label(start_iso: str, end_iso: str, explicit_label: str | None) -> str:
@@ -86,8 +80,7 @@ def load_fleet_customer_context(context_path: str):
     return read_json_file(context_path)
 
 
-def _resolve_backupradar_base_context(raw_context: dict, env: dict[str, str] | None = None, now: datetime | None = None) -> dict:
-    env = env or os.environ
+def _resolve_backupradar_base_context(raw_context: dict, now: datetime | None = None) -> dict:
     now = now or datetime.now(timezone.utc)
     customer_id = str(raw_context.get("customer_id") or raw_context.get("id") or "").strip() or "unknown-customer"
     customer_name = str(
@@ -161,17 +154,9 @@ def _resolve_backupradar_base_context(raw_context: dict, env: dict[str, str] | N
         resources[name] = _resolve_resource(raw_resources, name, f"/{name}", defaults)
 
     required_resources = _parse_string_array(raw_scope.get("required_resources") or "backups")
-    api_key = _first_non_empty(
-        (raw_context.get("credentials") or {}).get("backupradar", {}).get("api_key"),
-        raw_scope.get("api_key"),
-        env.get("BACKUPRADAR_API_KEY"),
-    )
     scope = {
         "tenant_id": str(raw_scope.get("tenant_id") or "backupradar").strip() or "backupradar",
-        "base_url": str(raw_scope.get("base_url") or env.get("BACKUPRADAR_BASE_URL") or "https://api.backupradar.com").strip(),
-        "auth_mode": str(raw_scope.get("auth_mode") or "api_key").strip().lower() or "api_key",
-        "auth_header": str(raw_scope.get("auth_header") or "ApiKey").strip() or "ApiKey",
-        "api_key": api_key,
+        "base_url": str(raw_scope.get("base_url") or "https://api.backupradar.com").strip(),
         "customer_id": str(raw_scope.get("customer_id") or raw_scope.get("client_id") or "").strip(),
         "customer_name": str(raw_scope.get("customer_name") or "").strip(),
         "allow_unscoped_collection": _parse_bool(raw_scope.get("allow_unscoped_collection")),
@@ -209,10 +194,7 @@ def _resolve_backupradar_base_context(raw_context: dict, env: dict[str, str] | N
 
 
 def _validate_scope(scope: dict) -> None:
-    if scope["auth_mode"] != "api_key":
-        raise ValueError(f"Unsupported BackupRadar auth mode: {scope['auth_mode']}")
-    if not scope["api_key"]:
-        raise ValueError("BackupRadar api_key is required.")
+    # Authentication is handled by the nexon-backupradar-api sandbox Access Profile proxy.
     if not scope["allow_unscoped_collection"] and not scope["customer_id"]:
         raise ValueError(
             "BackupRadar scope must include customer_id unless allow_unscoped_collection=true.",
@@ -223,17 +205,14 @@ def _validate_scope(scope: dict) -> None:
             raise ValueError(f"BackupRadar resource '{resource_name}' must define a path.")
 
 
-def resolve_backupradar_context(raw_context: dict, env: dict[str, str] | None = None, now: datetime | None = None) -> dict:
-    context = _resolve_backupradar_base_context(raw_context, env=env, now=now)
+def resolve_backupradar_context(raw_context: dict, now: datetime | None = None) -> dict:
+    context = _resolve_backupradar_base_context(raw_context, now=now)
     _validate_scope(context["backupradar"])
     return context
 
 
-def resolve_backupradar_lookup_context(raw_context: dict, env: dict[str, str] | None = None, now: datetime | None = None) -> dict:
-    context = _resolve_backupradar_base_context(raw_context, env=env, now=now)
-    if not context["backupradar"]["api_key"]:
-        raise ValueError("BackupRadar api_key is required.")
-    return context
+def resolve_backupradar_lookup_context(raw_context: dict, now: datetime | None = None) -> dict:
+    return _resolve_backupradar_base_context(raw_context, now=now)
 
 
 def parse_cli_args(argv: list[str]) -> dict[str, str]:

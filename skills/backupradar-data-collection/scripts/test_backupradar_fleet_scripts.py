@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 import sys
 import tempfile
@@ -131,8 +130,6 @@ def build_raw_context():
             "backupradar": {
                 "tenant_id": "nexon-backupradar",
                 "base_url": "https://api.backupradar.com",
-                "auth_mode": "api_key",
-                "auth_header": "ApiKey",
                 # customer_id is the resolved companyName string in v2
                 "customer_id": "Customer B",
                 "customer_name": "Customer B",
@@ -175,8 +172,6 @@ def build_lookup_raw_context():
         "source_scope": {
             "backupradar": {
                 "base_url": "https://api.backupradar.com",
-                "auth_mode": "api_key",
-                "auth_header": "ApiKey",
                 "allow_unscoped_collection": True,
                 "resources": {
                     "backups": {
@@ -269,22 +264,18 @@ class BackupRadarFleetScriptsTest(unittest.TestCase):
                     "source_scope": {
                         "backupradar": {
                             "base_url": "https://api.backupradar.com",
-                            "auth_header": "ApiKey",
                         }
                     },
                 },
-                env={"BACKUPRADAR_API_KEY": "token"},
             )
 
     def test_context_defaults_use_v2_settings(self):
         """Default auth_header must be ApiKey and required_resources must include backups."""
         ctx = resolve_backupradar_context(
             build_raw_context(),
-            env={"BACKUPRADAR_API_KEY": "token"},
             now=datetime(2026, 8, 1, 10, 0, tzinfo=timezone.utc),
         )
         br = ctx["backupradar"]
-        self.assertEqual(br["auth_header"], "ApiKey")
         self.assertIn("backups", br["required_resources"])
         self.assertNotIn("jobs", br["required_resources"])
         self.assertIn("backups", br["resources"])
@@ -295,7 +286,6 @@ class BackupRadarFleetScriptsTest(unittest.TestCase):
         """Full pipeline run with v2 mock — verify counts, datasets, and bundle sections."""
         context = resolve_backupradar_context(
             build_raw_context(),
-            env={"BACKUPRADAR_API_KEY": "token"},
             now=datetime(2026, 8, 1, 10, 0, tzinfo=timezone.utc),
         )
         result = run_backupradar_pipeline(context, fetch_impl=create_fetch_mock())
@@ -333,7 +323,6 @@ class BackupRadarFleetScriptsTest(unittest.TestCase):
         """Resolver must discover Customer B from /backups companyName (no /customers endpoint)."""
         lookup_context = resolve_backupradar_lookup_context(
             build_lookup_raw_context(),
-            env={"BACKUPRADAR_API_KEY": "token"},
         )
         resolution = resolve_backupradar_scope_by_company(lookup_context, fetch_impl=create_fetch_mock())
         self.assertEqual(resolution["match_confidence"], "high")
@@ -345,7 +334,6 @@ class BackupRadarFleetScriptsTest(unittest.TestCase):
         """Jobs from 'Other Company' must not appear in a Customer B scoped run."""
         context = resolve_backupradar_context(
             build_raw_context(),
-            env={"BACKUPRADAR_API_KEY": "token"},
             now=datetime(2026, 8, 1, 10, 0, tzinfo=timezone.utc),
         )
         result = run_backupradar_pipeline(context, fetch_impl=create_fetch_mock())
@@ -357,7 +345,6 @@ class BackupRadarFleetScriptsTest(unittest.TestCase):
         """normalize and bundle CLI scripts must produce valid output files."""
         context = resolve_backupradar_context(
             build_raw_context(),
-            env={"BACKUPRADAR_API_KEY": "token"},
             now=datetime(2026, 8, 1, 10, 0, tzinfo=timezone.utc),
         )
         pipeline = run_backupradar_pipeline(context, fetch_impl=create_fetch_mock())
@@ -373,19 +360,18 @@ class BackupRadarFleetScriptsTest(unittest.TestCase):
             Path(run_paths["backupradar_snapshot_file"]).write_text(
                 f"{json.dumps(pipeline['snapshot'], indent=2)}\n", encoding="utf-8"
             )
-            env = {**os.environ, "BACKUPRADAR_API_KEY": "token"}
 
             normalize = subprocess.run(
                 [sys.executable, str(CURRENT_DIR / "normalize_backupradar_collection.py"),
                  "--context", str(context_path), "--run-dir", str(run_dir)],
-                cwd=root, capture_output=True, text=True, env=env, check=False,
+                cwd=root, capture_output=True, text=True, check=False,
             )
             self.assertEqual(normalize.returncode, 0, normalize.stderr)
 
             bundle_proc = subprocess.run(
                 [sys.executable, str(CURRENT_DIR / "build_backupradar_report_bundle.py"),
                  "--context", str(context_path), "--run-dir", str(run_dir)],
-                cwd=root, capture_output=True, text=True, env=env, check=False,
+                cwd=root, capture_output=True, text=True, check=False,
             )
             self.assertEqual(bundle_proc.returncode, 0, bundle_proc.stderr)
 

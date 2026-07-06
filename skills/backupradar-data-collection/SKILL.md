@@ -40,7 +40,6 @@ Minimum unresolved context when only the company name is known:
   "source_scope": {
     "backupradar": {
       "base_url": "https://api.backupradar.com",
-      "auth_mode": "api_key",
       "resources": {
         "customers": {
           "path": "/customers"
@@ -67,7 +66,6 @@ Minimum direct-collection context when the customer scope is already known:
   "source_scope": {
     "backupradar": {
       "base_url": "https://api.backupradar.com",
-      "auth_mode": "api_key",
       "customer_id": "12345",
       "resources": {
         "customers": {
@@ -117,10 +115,12 @@ Minimum direct-collection context when the customer scope is already known:
 }
 ```
 
-Provide BackupRadar credentials through run secrets or environment variables:
+## Authentication
 
-- `BACKUPRADAR_API_KEY`
-- `BACKUPRADAR_BASE_URL` if the tenant does not use `https://api.backupradar.com`
+Authentication is handled automatically by the `nexon-backupradar-api` sandbox Access Profile.
+The proxy injects the `ApiKey` header on every outbound request to `api.backupradar.com`.
+Do not set `auth_mode`, `api_key`, or `BACKUPRADAR_API_KEY` in the context or environment.
+The `base_url` defaults to `https://api.backupradar.com` and only needs to be set if using a non-standard endpoint.
 
 ## Standard flow
 

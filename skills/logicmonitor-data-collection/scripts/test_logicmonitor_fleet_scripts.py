@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 import sys
 import tempfile
@@ -155,7 +154,6 @@ def build_raw_context():
             "logicmonitor": {
                 "tenant_id": "nexon-logicmonitor",
                 "account_name": "nexon",
-                "auth_mode": "bearer",
                 "group_identifiers": ["Nexon/Customer A"],
                 "site_groups": ["Customer A"],
                 "root_device_group_id": 101,
@@ -287,13 +285,11 @@ class LogicMonitorFleetScriptsTest(unittest.TestCase):
                     "period": {"start": "2026-07-01T00:00:00Z", "end": "2026-07-02T00:00:00Z"},
                     "source_scope": {"logicmonitor": {"account_name": "nexon"}},
                 },
-                env={"LOGICMONITOR_BEARER_TOKEN": "token"},
             )
 
     def test_pipeline_produces_scoped_artifacts(self):
         context = resolve_logicmonitor_context(
             build_raw_context(),
-            env={"LOGICMONITOR_BEARER_TOKEN": "token"},
             now=datetime(2026, 8, 1, 10, 0, tzinfo=timezone.utc),
         )
         result = run_logicmonitor_pipeline(context, fetch_impl=create_fetch_mock())
@@ -330,11 +326,9 @@ class LogicMonitorFleetScriptsTest(unittest.TestCase):
                     "logicmonitor": {
                         "tenant_id": "nexon-logicmonitor",
                         "account_name": "nexon",
-                        "auth_mode": "bearer",
                     },
                 },
             },
-            env={"LOGICMONITOR_BEARER_TOKEN": "token"},
         )
         resolution = resolve_logicmonitor_scope_by_company(lookup_context, fetch_impl=create_fetch_mock())
         self.assertEqual(resolution["match_confidence"], "high")
@@ -349,7 +343,6 @@ class LogicMonitorFleetScriptsTest(unittest.TestCase):
     def test_cli_steps_write_expected_files(self):
         context = resolve_logicmonitor_context(
             build_raw_context(),
-            env={"LOGICMONITOR_BEARER_TOKEN": "token"},
             now=datetime(2026, 8, 1, 10, 0, tzinfo=timezone.utc),
         )
         pipeline = run_logicmonitor_pipeline(context, fetch_impl=create_fetch_mock())
@@ -364,13 +357,11 @@ class LogicMonitorFleetScriptsTest(unittest.TestCase):
                 f"{json.dumps(pipeline['snapshot'], indent=2)}\n",
                 encoding="utf-8",
             )
-            env = {**os.environ, "LOGICMONITOR_BEARER_TOKEN": "token"}
             normalize = subprocess.run(
                 [sys.executable, str(CURRENT_DIR / "normalize_logicmonitor_collection.py"), "--context", str(context_path), "--run-dir", str(run_dir)],
                 cwd=root,
                 capture_output=True,
                 text=True,
-                env=env,
                 check=False,
             )
             self.assertEqual(normalize.returncode, 0, normalize.stderr)
@@ -379,7 +370,6 @@ class LogicMonitorFleetScriptsTest(unittest.TestCase):
                 cwd=root,
                 capture_output=True,
                 text=True,
-                env=env,
                 check=False,
             )
             self.assertEqual(bundle.returncode, 0, bundle.stderr)

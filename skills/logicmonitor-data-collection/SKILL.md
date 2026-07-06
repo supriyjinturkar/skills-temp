@@ -1,7 +1,6 @@
 ---
 name: logicmonitor-data-collection
 description: Use when a LangSmith Fleet agent needs to resolve customer scope, collect customer-scoped LogicMonitor data, normalize it, or build a reusable Nexon report bundle from the shared LogicMonitor tenant.
-version: 1.5.0
 ---
 
 # Nexon LogicMonitor Data Collection - Fleet
@@ -41,8 +40,7 @@ Minimum unresolved context when only the company name is known:
   },
   "source_scope": {
     "logicmonitor": {
-      "account_name": "nexon",
-      "auth_mode": "bearer"
+      "account_name": "nexon"
     }
   }
 }
@@ -64,7 +62,6 @@ Minimum direct-collection context when scope is already known:
   "source_scope": {
     "logicmonitor": {
       "account_name": "nexon",
-      "auth_mode": "bearer",
       "group_identifiers": ["Nexon/Customer A"],
       "site_groups": ["Customer A"],
       "root_device_group_id": 101,
@@ -74,13 +71,12 @@ Minimum direct-collection context when scope is already known:
 }
 ```
 
-Provide LogicMonitor credentials through run secrets or environment variables:
+## Authentication
 
-- `LOGICMONITOR_BEARER_TOKEN`
-- `LOGICMONITOR_API_ACCESS_ID`
-- `LOGICMONITOR_API_ACCESS_KEY`
-- `LOGICMONITOR_BASIC_USERNAME`
-- `LOGICMONITOR_BASIC_PASSWORD`
+Authentication is handled automatically by the `nexon-logicmonitor-api` sandbox Access Profile.
+The proxy injects the `Authorization` header on every outbound request to `nexon.logicmonitor.com`.
+Do not set `auth_mode`, credential fields, or any `LOGICMONITOR_*` environment variables.
+No credentials configuration is required in `customer_context.json` or the environment.
 
 ## Standard flow
 

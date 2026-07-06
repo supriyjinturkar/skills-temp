@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import base64
-import hashlib
-import hmac
 import json
 import math
 import time
@@ -714,31 +711,6 @@ class LogicMonitorApi:
     def _base_url(self) -> str:
         return f"https://{self.config['account_name']}.logicmonitor.com/santaba/rest"
 
-    def _authorization_header(self, method: str, resource_path_with_query: str, body_text: str) -> str:
-        auth_mode = str(self.config.get("auth_mode") or "bearer").strip().lower()
-        if auth_mode == "bearer":
-            token = self.config.get("bearer_token") or ""
-            if not token:
-                raise ValueError("LogicMonitor bearer token is required.")
-            return f"Bearer {token}"
-        if auth_mode == "basic":
-            username = self.config.get("basic_username") or ""
-            password = self.config.get("basic_password") or ""
-            if not username or not password:
-                raise ValueError("LogicMonitor basic credentials are required.")
-            encoded = base64.b64encode(f"{username}:{password}".encode("utf-8")).decode("ascii")
-            return f"Basic {encoded}"
-        if auth_mode == "lmv1":
-            access_id = self.config.get("api_access_id") or ""
-            access_key = self.config.get("api_access_key") or ""
-            if not access_id or not access_key:
-                raise ValueError("LogicMonitor LMv1 credentials are required.")
-            epoch = str(int(time.time() * 1000))
-            signature_base = f"{method.upper()}{epoch}{body_text}{resource_path_with_query}".encode("utf-8")
-            signature = base64.b64encode(hmac.new(access_key.encode("utf-8"), signature_base, hashlib.sha256).digest()).decode("ascii")
-            return f"LMv1 {access_id}:{signature}:{epoch}"
-        raise ValueError(f"Unsupported LogicMonitor auth mode: {auth_mode}")
-
     def _build_request(self, method: str, resource_path: str, query: dict | None = None, body=None):
         query_string = f"?{urlencode(query or {}, doseq=True)}" if query else ""
         resource_path_with_query = f"{resource_path}{query_string}"
@@ -746,7 +718,8 @@ class LogicMonitorApi:
         headers = {
             "Accept": "application/json",
             "X-Version": str(self.config.get("api_version") or 3),
-            "Authorization": self._authorization_header(method, resource_path_with_query, body_text),
+            # Authorization is injected by the nexon-logicmonitor-api sandbox
+            # Access Profile proxy — do not set it here.
         }
         if body is not None:
             headers["Content-Type"] = "application/json"
@@ -1956,7 +1929,6 @@ def resolve_logicmonitor_scope_by_company(context: dict, fetch_impl=None, sleep_
                 "tenant_id": context["logicmonitor"]["tenant_id"],
                 "account_name": context["logicmonitor"]["account_name"],
                 "api_version": context["logicmonitor"]["api_version"],
-                "auth_mode": context["logicmonitor"]["auth_mode"],
                 "group_identifiers": device_group_identifiers,
                 "site_groups": [root_label] if root_label else [],
                 "root_device_group_id": root_device_group.get("id"),

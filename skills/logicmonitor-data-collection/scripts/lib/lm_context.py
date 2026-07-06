@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import os
 from datetime import datetime, timezone
 
 from lm_io import read_json_file
@@ -33,11 +32,6 @@ def _parse_optional_number(value):
     return int(numeric) if numeric.is_integer() else numeric
 
 
-def _first_non_empty(*values) -> str:
-    for value in values:
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-    return ""
 
 
 def _build_period_label(start_iso: str, end_iso: str, explicit_label: str | None) -> str:
@@ -46,36 +40,6 @@ def _build_period_label(start_iso: str, end_iso: str, explicit_label: str | None
     return f"{start_iso[:10]} to {end_iso[:10]}"
 
 
-def _resolve_credentials(raw_scope: dict, raw_credentials: dict, env: dict[str, str]) -> dict[str, str]:
-    auth_mode = str(raw_scope.get("auth_mode") or raw_credentials.get("auth_mode") or "bearer").strip().lower() or "bearer"
-    return {
-        "auth_mode": auth_mode,
-        "bearer_token": _first_non_empty(
-            raw_credentials.get("bearer_token"),
-            raw_scope.get("bearer_token"),
-            env.get("LOGICMONITOR_BEARER_TOKEN"),
-        ),
-        "api_access_id": _first_non_empty(
-            raw_credentials.get("api_access_id"),
-            raw_scope.get("api_access_id"),
-            env.get("LOGICMONITOR_API_ACCESS_ID"),
-        ),
-        "api_access_key": _first_non_empty(
-            raw_credentials.get("api_access_key"),
-            raw_scope.get("api_access_key"),
-            env.get("LOGICMONITOR_API_ACCESS_KEY"),
-        ),
-        "basic_username": _first_non_empty(
-            raw_credentials.get("basic_username"),
-            raw_scope.get("basic_username"),
-            env.get("LOGICMONITOR_BASIC_USERNAME"),
-        ),
-        "basic_password": _first_non_empty(
-            raw_credentials.get("basic_password"),
-            raw_scope.get("basic_password"),
-            env.get("LOGICMONITOR_BASIC_PASSWORD"),
-        ),
-    }
 
 
 def _validate_scope(scope: dict) -> None:
@@ -94,8 +58,7 @@ def load_fleet_customer_context(context_path: str):
     return read_json_file(context_path)
 
 
-def _resolve_logicmonitor_base_context(raw_context: dict, env: dict[str, str] | None = None, now: datetime | None = None) -> dict:
-    env = env or os.environ
+def _resolve_logicmonitor_base_context(raw_context: dict, now: datetime | None = None) -> dict:
     now = now or datetime.now(timezone.utc)
     customer_id = str(raw_context.get("customer_id") or raw_context.get("id") or "").strip() or "unknown-customer"
     customer_name = str(
@@ -119,8 +82,6 @@ def _resolve_logicmonitor_base_context(raw_context: dict, env: dict[str, str] | 
     end_iso = _to_iso(raw_period["end"], "period.end")
     period_label = _build_period_label(start_iso, end_iso, raw_period.get("label"))
     raw_scope = (raw_context.get("source_scope") or {}).get("logicmonitor") or raw_context.get("logicmonitor") or {}
-    raw_credentials = (raw_context.get("credentials") or {}).get("logicmonitor") or {}
-    credentials = _resolve_credentials(raw_scope, raw_credentials, env)
     root_device_group_id = _parse_optional_number(raw_scope.get("root_device_group_id"))
     group_identifiers = _parse_string_array(raw_scope.get("group_identifiers"))
     if not group_identifiers and root_device_group_id is not None:
@@ -143,7 +104,6 @@ def _resolve_logicmonitor_base_context(raw_context: dict, env: dict[str, str] | 
         "max_pages_per_endpoint": int(raw_scope.get("max_pages_per_endpoint") or 0),
         "alert_chunk_hours": int(raw_scope.get("alert_chunk_hours") or 24),
         "detail_fetch_concurrency": int(raw_scope.get("detail_fetch_concurrency") or 5),
-        **credentials,
     }
 
     if not scope["account_name"]:
@@ -181,14 +141,14 @@ def _resolve_logicmonitor_base_context(raw_context: dict, env: dict[str, str] | 
     }
 
 
-def resolve_logicmonitor_context(raw_context: dict, env: dict[str, str] | None = None, now: datetime | None = None) -> dict:
-    context = _resolve_logicmonitor_base_context(raw_context, env=env, now=now)
+def resolve_logicmonitor_context(raw_context: dict, now: datetime | None = None) -> dict:
+    context = _resolve_logicmonitor_base_context(raw_context, now=now)
     _validate_scope(context["logicmonitor"])
     return context
 
 
-def resolve_logicmonitor_lookup_context(raw_context: dict, env: dict[str, str] | None = None, now: datetime | None = None) -> dict:
-    return _resolve_logicmonitor_base_context(raw_context, env=env, now=now)
+def resolve_logicmonitor_lookup_context(raw_context: dict, now: datetime | None = None) -> dict:
+    return _resolve_logicmonitor_base_context(raw_context, now=now)
 
 
 def parse_cli_args(argv: list[str]) -> dict[str, str]:

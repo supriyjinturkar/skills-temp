@@ -102,7 +102,7 @@ def _resolve_logicmonitor_base_context(raw_context: dict, now: datetime | None =
         "request_retry_backoff_ms": int(raw_scope.get("request_retry_backoff_ms") or 1000),
         "fetch_page_size": int(raw_scope.get("fetch_page_size") or 200),
         "max_pages_per_endpoint": int(raw_scope.get("max_pages_per_endpoint") or 0),
-        "alert_chunk_hours": int(raw_scope.get("alert_chunk_hours") or 24),
+        "alert_chunk_hours": int(raw_scope.get("alert_chunk_hours") or 168),
         "detail_fetch_concurrency": int(raw_scope.get("detail_fetch_concurrency") or 5),
     }
 

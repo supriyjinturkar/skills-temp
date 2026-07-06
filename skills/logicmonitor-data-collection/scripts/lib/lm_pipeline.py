@@ -207,8 +207,8 @@ PERFORMANCE_COLLECTION_SPECS = {
     },
     "ping": {
         "datasource_exact": {"ping"},
-        "metric_candidates": ["PacketLossPercent"],
-        "extra_metric_candidates": ["PingRTT", "RoundTripTime", "ResponseTime", "Latency"],
+        "metric_candidates": ["PacketLossPercent", "PingLossPercent", "LossPercent"],
+        "extra_metric_candidates": ["PingRTT", "RoundTripTime", "ResponseTime", "Latency", "average", "Average", "maxrtt", "MaxRTT"],
     },
     "network": {
         "datasource_prefix": ("winif",),
@@ -702,7 +702,7 @@ class LogicMonitorApi:
         self.retry_backoff_ms = max(100, int(config.get("request_retry_backoff_ms", 1000)))
         self.fetch_page_size = max(1, int(config.get("fetch_page_size", 200)))
         self.max_pages_per_endpoint = max(0, int(config.get("max_pages_per_endpoint", 0)))
-        self.alert_chunk_hours = max(1, int(config.get("alert_chunk_hours", 24)))
+        self.alert_chunk_hours = max(1, int(config.get("alert_chunk_hours", 168)))
         self.diagnostics = {
             "requests_made": [],
             "errors": [],
@@ -902,10 +902,11 @@ class LogicMonitorApi:
         start_ms: int,
         end_ms: int,
     ):
+        # LM REST API v3 /data expects epoch seconds, not milliseconds.
+        # Omit datapoints filter and fetch all — the normalizer selects relevant series.
         query = {
-            "datapoints": ",".join(metric_candidates),
-            "start": start_ms,
-            "end": end_ms,
+            "start": start_ms // 1000,
+            "end": end_ms // 1000,
         }
         return self.request(
             "GET",
@@ -1093,19 +1094,11 @@ def _safe_fetch_entity_details(api: LogicMonitorApi, resource_path_base: str, it
         return _empty_entity_details()
 
 
-def _fetch_scoped_alerts(api: LogicMonitorApi, group_ids: list, start_ms: int, end_ms: int, cleared: bool) -> dict:
-    if not group_ids:
+def _fetch_scoped_alerts(api: LogicMonitorApi, root_group_id: int, start_ms: int, end_ms: int, cleared: bool) -> dict:
+    if root_group_id is None:
         return _empty_paged_result()
-    merged = []
-    seen = set()
-    for group_id in group_ids:
-        result = api.fetch_alerts(start_ms, end_ms, {"group_id": group_id, "cleared": cleared})
-        for item in result["items"]:
-            key = str(item.get("id") or "")
-            if key and key not in seen:
-                seen.add(key)
-                merged.append(item)
-    return {"count_collected": len(merged), "items": merged}
+    result = api.fetch_alerts(start_ms, end_ms, {"group_id": root_group_id, "cleared": cleared})
+    return {"count_collected": len(result["items"]), "items": result["items"]}
 
 
 def _fetch_website_scope(api: LogicMonitorApi, context: dict) -> dict:
@@ -1265,6 +1258,27 @@ def _instance_label(instance: dict) -> str:
 
 def _collect_series_from_payload(payload, series: dict[str, list[float]]) -> None:
     if isinstance(payload, dict):
+        # Handle LogicMonitor v3 /data response shape:
+        # {"dataPoints": ["Name1", "Name2", ...], "values": [[v1, v2, ...], ...], "time": [...]}
+        datapoints_list = payload.get("dataPoints")
+        values_list = payload.get("values")
+        if isinstance(datapoints_list, list) and isinstance(values_list, list) and datapoints_list:
+            # values_list is a list of rows, each row is a list of per-datapoint values
+            # Transpose: build one list per datapoint name
+            per_dp: dict[str, list[float]] = {}
+            for row in values_list:
+                if not isinstance(row, list):
+                    continue
+                for idx, dp_name in enumerate(datapoints_list):
+                    if idx < len(row):
+                        raw = row[idx]
+                        if isinstance(raw, (int, float)) and raw is not None:
+                            per_dp.setdefault(_normalize_metric_key(str(dp_name)), []).append(float(raw))
+            for k, v in per_dp.items():
+                if v:
+                    series[k] = v
+            return
+        # Legacy shape: {"datapoints": {"Name": [values]}}
         datapoints = payload.get("datapoints")
         if isinstance(datapoints, dict):
             for name, values in datapoints.items():
@@ -1953,8 +1967,9 @@ def collect_logicmonitor_snapshot(context: dict, fetch_impl=None, sleep_impl=Non
     if not context["logicmonitor"]["allow_full_tenant_collection"] and not device_scope["groups"]["items"]:
         raise RuntimeError("No LogicMonitor device groups matched the requested customer scope.")
     scoped_group_ids = [group["id"] for group in device_scope["groups"]["items"] if group.get("id") is not None]
-    open_alerts = _fetch_scoped_alerts(api, scoped_group_ids, context["period"]["start_ms"], context["period"]["end_ms"], False)
-    cleared_alerts = _fetch_scoped_alerts(api, scoped_group_ids, context["period"]["start_ms"], context["period"]["end_ms"], True)
+    root_group_id = context["logicmonitor"]["root_device_group_id"]
+    open_alerts = _fetch_scoped_alerts(api, root_group_id, context["period"]["start_ms"], context["period"]["end_ms"], False)
+    cleared_alerts = _fetch_scoped_alerts(api, root_group_id, context["period"]["start_ms"], context["period"]["end_ms"], True)
     device_group_details = _safe_fetch_entity_details(api, "/device/groups", device_scope["groups"]["items"])
     device_details = _safe_fetch_entity_details(api, "/device/devices", device_scope["devices"]["items"])
     website_scope = _fetch_website_scope(api, context)

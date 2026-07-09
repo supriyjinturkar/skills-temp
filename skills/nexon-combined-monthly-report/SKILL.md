@@ -106,6 +106,29 @@ Use it when one report needs to bring together multiple sources such as:
 - If one source is shallow because data collection is incomplete, keep that limitation explicit and avoid letting it reduce the depth of stronger available sections.
 - Prefer module sequencing that reads from broad operational posture into exceptions, risks, and actions.
 
+### Slide-density rules
+
+- One slide should carry one main message.
+- Prefer one chart or table plus one short commentary panel, not multiple competing visual stories on the same slide.
+- Do not force four long bullets into one commentary card.
+- Prefer at most 3 commentary bullets in one panel.
+- Prefer roughly 14 to 16 words or fewer per commentary bullet unless a longer line is unavoidable.
+- If commentary exceeds the available space, split it across another slide or move detail into the appendix.
+- Do not rely on tiny text, aggressive wrapping, or vertical crowding to keep a slide to one page.
+- If a table needs more than a clean presentation-scale row count, continue it on another slide instead of shrinking it.
+
+### Chart-label rules
+
+- Shorten labels aggressively when that improves readability without losing meaning.
+- Prefer short month labels such as:
+  - `May`
+  - `Jun`
+  - `Jul (part.)`
+- Avoid pie charts when the labels are long, the slices are small, or the labels must compete with percentages inside the chart.
+- Prefer bar, stacked bar, clustered bar, or donut views when composition needs to stay readable.
+- Do not let legends or data labels overpower the chart itself.
+- If the chart needs a paragraph of explanation to be interpretable, choose a clearer visual.
+
 ### Appendix
 
 - Use the appendix aggressively for long lists, detailed breach tables, raw inventories, and repeated operational evidence.
@@ -119,6 +142,8 @@ Use it when one report needs to bring together multiple sources such as:
 - Are charts chosen to show movement, comparison, or composition clearly?
 - Are metrics labeled with scope, units, and timeframe?
 - Are commentary blocks anchored in numbers and operational implications?
+- Are commentary blocks short enough to fit cleanly without clipping, crowding, or unreadable wrap?
+- Are chart labels, legends, and data labels still readable at presentation scale without collisions?
 - Is detailed evidence available without overcrowding the main story?
 - Are incomplete sections called out honestly instead of hidden behind generic prose?
 - Has the rendered output been visually checked for alignment, overlap, clipping, and spacing issues before review handoff?

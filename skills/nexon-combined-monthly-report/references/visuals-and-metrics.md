@@ -6,6 +6,10 @@ Use this file to choose useful visuals, chart types, metrics, and table depth fo
 
 - Every main-body module should have at least one visual if chartable data exists.
 - Prefer these patterns when they improve clarity, not because the report must mechanically include them.
+- When a source section has enough usable data, prefer at least:
+  - one posture view
+  - one evidence view such as a chart, ranked table, or exception summary
+  - one short interpretation block
 - Use charts to show one of four things:
   - posture
   - trend
@@ -13,6 +17,7 @@ Use this file to choose useful visuals, chart types, metrics, and table depth fo
   - ranking
 - Prefer simple business graphics over decorative graphics.
 - Avoid charts that look impressive but communicate little.
+- Reuse the depth already present in source bundles when available instead of collapsing the source into cards plus prose.
 
 ## Preferred chart types
 
@@ -66,6 +71,7 @@ Often useful visuals:
 - clustered column chart for ticket class breakdown
 - line or column trend for opened-by-month and closed-by-month
 - optional horizontal bar chart for top categories or top callers
+- optional breakdown table for class, priority, or assignment composition
 
 Often useful metrics:
 
@@ -82,6 +88,11 @@ Good detail table candidates:
 
 - class totals by month
 - top caller or top category rows
+
+Depth hint:
+
+- if ServiceNow data is the strongest source for the month, do not stop at one overview panel
+- usually expand into SLA and backlog sections as separate evidence views
 
 ## SLA performance
 
@@ -135,6 +146,7 @@ Often useful visuals:
 - line trend for alert flow over time
 - RAG table for top unhealthy resources
 - optional bar chart for top devices or sites by alert count
+- optional ranked view for capacity or performance hotspots
 
 Often useful metrics:
 
@@ -156,6 +168,11 @@ Good appendix tables:
 - disk-capacity hotspots
 - network throughput hotspots
 
+Depth hint:
+
+- if observability data exists beyond simple scope confirmation, prefer at least one posture view and one resource-level evidence view
+- if observability data is missing or incomplete, state that clearly rather than pretending the section is fully report-ready
+
 ## Backup and data protection
 
 Often useful visuals:
@@ -163,6 +180,7 @@ Often useful visuals:
 - KPI cards for success rate, protected devices, failed jobs, and warning jobs
 - line or stacked column trend for daily or weekly backup outcomes
 - summary table for job outcomes by status
+- optional exception table when failures, warnings, or restore activity exist
 
 Often useful metrics:
 
@@ -181,6 +199,11 @@ Good appendix tables:
 - failed job details
 - warning or pending exceptions
 - restore exceptions
+
+Depth hint:
+
+- if backup posture is healthy, keep the main body concise but still show real evidence
+- if exceptions exist, expand the section rather than hiding the issue behind a success-rate card
 
 ## Security posture
 
@@ -240,6 +263,10 @@ Use these checks before considering a section complete:
 - no chart without units, timeframe, or data meaning
 - no overloaded slide mixing multiple unrelated visuals
 - no visual included if the underlying data is missing or untrustworthy
+- no text box should overlap decorative bars, status chips, chart frames, or neighboring cards
+- labels, sublabels, and status chips should have visible breathing room rather than touching or crossing
+- KPI cards should be checked after rendering, not only at authoring time
+- a data-rich source should not appear visually weaker in the combined report than it does in its own source-level summary unless there is a deliberate reason
 
 ## Missing-data rules
 

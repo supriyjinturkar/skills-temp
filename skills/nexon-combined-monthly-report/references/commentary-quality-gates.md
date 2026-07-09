@@ -85,9 +85,11 @@ Treat the report as materially weak or incomplete if any of these are true:
 
 - the executive summary is only prose and has no KPI posture
 - a major source section has chartable data but no visual
+- a major source with available trend or breakdown data has been compressed into a single shallow summary block
 - a section contains "pending collection" style placeholder language without a clear draft-state warning
 - a module is present but lacks enough evidence to support its commentary
 - appendix material has crowded out the main narrative
+- rendered content shows obvious overlap, clipping, alignment, or spacing defects
 
 ## Recommended review checklist
 
@@ -97,7 +99,9 @@ Treat the report as materially weak or incomplete if any of these are true:
 4. Are the highest-risk items visible?
 5. Are actions or watch items explicit where needed?
 6. Is any main claim unsupported by visible evidence?
-7. Would this feel credible if delivered directly to the customer tomorrow?
+7. Does each major source have enough depth to feel credible, not just summarized?
+8. Does the rendered artifact look professionally aligned and readable at customer-facing quality?
+9. Would this feel credible if delivered directly to the customer tomorrow?
 
 ## Delivery-state labels
 

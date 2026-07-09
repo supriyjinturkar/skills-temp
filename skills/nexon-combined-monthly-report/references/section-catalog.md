@@ -65,6 +65,23 @@ Good input areas:
 
 These are reusable combined-report modules. Use the ones that fit the customer and month.
 
+## Depth rule for combined reports
+
+When a major datasource has enough usable data, a strong combined report usually gives it more than one block of attention.
+
+Common pattern:
+
+- one summary or posture section
+- one supporting detail section
+- appendix evidence when the detailed tables are too long for the main body
+
+Avoid this weak pattern:
+
+- one source
+- one KPI strip
+- one paragraph of commentary
+- no trend, no breakdown, no exceptions, and no appendix evidence
+
 ### Service desk overview
 
 Use when ServiceNow or equivalent service-desk data is available.
@@ -76,6 +93,12 @@ Include:
 - priority or severity composition
 - assignment group or service dimension signal
 - short commentary on trend movement and workload posture
+
+Strong combined-report depth often means pairing this with:
+
+- SLA performance
+- incident and backlog health
+- appendix detail for aged or breached items
 
 ### SLA performance
 
@@ -124,6 +147,13 @@ Include:
 - active critical or degraded resources
 - monitoring coverage caveats
 
+Strong combined-report depth often means pairing this with one or more of:
+
+- top unhealthy resources
+- alert concentration by site or device
+- capacity or performance hotspots
+- appendix detail for resource-level evidence
+
 ### Backup and data protection
 
 Use when BackupRadar or similar backup data exists.
@@ -134,6 +164,12 @@ Include:
 - protected devices or jobs
 - failed, warning, retried, or pending trend
 - notable backup exceptions
+
+Strong combined-report depth often means pairing this with:
+
+- job outcome trend
+- exception or restore summary
+- appendix detail for failed or warning rows when present
 
 ## 3. Optional specialized modules
 
@@ -251,3 +287,5 @@ Many well-formed combined monthly reports end up with something like:
 - 1 appendix divider and supporting appendix content
 
 Treat that as a rough shape, not a hard rule.
+
+For three-source combined reports such as service desk + observability + backup, it is often stronger to let each source family have real depth than to compress all of them into one shallow executive-only narrative.

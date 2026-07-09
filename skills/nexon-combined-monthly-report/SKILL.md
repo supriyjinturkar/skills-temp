@@ -1,6 +1,6 @@
 ---
 name: nexon-combined-monthly-report
-description: Use when designing, drafting, reviewing, or improving a combined Nexon monthly customer report that merges multiple operational sources into one customer-facing deck, especially when choosing useful sections, visuals, metrics, and commentary while keeping the report evidence-led, customer-facing, and adaptable rather than rigidly template-bound.
+description: Use when designing, drafting, reviewing, or improving a combined Nexon monthly customer report that merges multiple operational sources into one customer-facing report, especially when choosing useful sections, visuals, metrics, and commentary while preserving source-level depth instead of collapsing the report into a thin executive summary.
 ---
 
 # Nexon Combined Monthly Report
@@ -14,17 +14,13 @@ Use it when one report needs to bring together multiple sources such as:
 - BackupRadar
 - customer-provided or manually curated operational sections
 
-Use it alongside:
-
-- `nexon-report-branding` for visual language and slide styling
-- `nexon-monthly-service-report` for narrative rhythm and summary-to-detail flow
-
 ## How to use this skill
 
 - Treat this skill as guidance, not a mandatory slide-by-slide recipe.
 - Use it to improve report quality, section choice, visual choice, and commentary quality.
 - Adapt the report to the customer, the reporting month, and the data actually available.
 - Do not force every suggested module, visual, or metric into every report.
+- Use it as a standalone report-making guide when no other Nexon report-writing skill is attached.
 
 ## Use this skill for
 
@@ -58,6 +54,12 @@ Use it alongside:
   - evidence
   - commentary
   - detail or appendix
+- Preserve depth from the underlying sources when the data supports it.
+- Do not reduce a data-rich source to one thin summary block if the source bundle supports trend, breakdown, exception, or ranked-detail views.
+- In most strong combined reports, each major source contributes more than one content view:
+  - a posture or summary view
+  - an evidence or drill-down view
+  - appendix support when needed
 - Prefer at least one meaningful visual for each major main-body module when chartable data exists.
 - Do not flatten trend-ready source data into narrative paragraphs.
 - Do not include a section just because a source exists. Include sections because they add customer value for that month.
@@ -100,6 +102,8 @@ Use it alongside:
   - a summary view
   - one supporting visual or evidence view
   - detail only when needed
+- When multiple sources are present, use the combined report to organize them well, not to dilute them.
+- If one source is shallow because data collection is incomplete, keep that limitation explicit and avoid letting it reduce the depth of stronger available sections.
 - Prefer module sequencing that reads from broad operational posture into exceptions, risks, and actions.
 
 ### Appendix
@@ -117,6 +121,7 @@ Use it alongside:
 - Are commentary blocks anchored in numbers and operational implications?
 - Is detailed evidence available without overcrowding the main story?
 - Are incomplete sections called out honestly instead of hidden behind generic prose?
+- Has the rendered output been visually checked for alignment, overlap, clipping, and spacing issues before review handoff?
 
 ## Edit expectations
 

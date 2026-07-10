@@ -811,20 +811,85 @@ class LogicMonitorApi:
             "items": filtered,
         }
 
+    def _fetch_all_subgroups(self, root_group_id: int) -> list[dict]:
+        """Return all sub-groups (including root) under root_group_id by paginating
+        /device/groups with a parentId filter at each level.  Falls back to a
+        full tenant walk filtered by fullPath prefix when the parentId filter is
+        not supported by the tenant.
+        """
+        collected: dict[int, dict] = {}
+        queue = [root_group_id]
+        while queue:
+            parent_id = queue.pop()
+            try:
+                result = self.list_paged("/device/groups", query={"filter": f"parentId:{parent_id}"})
+                children = result.get("items") or []
+            except RuntimeError:
+                children = []
+            for group in children:
+                gid = group.get("id")
+                if gid is not None and gid not in collected:
+                    collected[gid] = group
+                    queue.append(gid)
+        return list(collected.values())
+
     def fetch_devices_for_groups(self, groups: list[dict]) -> dict:
-        devices = []
-        seen = set()
-        for group in groups:
-            group_devices = self.list_paged(f"/device/groups/{group['id']}/devices")
+        """Collect devices from every group in *groups* and all their
+        descendants, deduplicated by device id.
+
+        The LogicMonitor API endpoint ``GET /device/groups/{id}/devices``
+        returns only the **direct** members of a group — it does NOT recurse
+        into sub-groups.  Customers typically assign devices to leaf sub-groups
+        (e.g. Servers/SY3/RDS) while the root group (e.g. Altus Financial)
+        contains zero direct members even though its ``numOfHosts`` metadata
+        field reflects the full recursive count.
+
+        Fix: for each root group passed in, first enumerate all descendant
+        sub-groups via the parentId filter, then call ``/devices`` on every
+        group that has ``numOfDirectDevices > 0`` (or, as a fallback, every
+        group in the tree when that field is absent).  Deduplicate across
+        groups by device id so that devices that appear in multiple dynamic
+        groups (e.g. "Windows Servers" and "Domain Controller") are counted
+        only once.
+        """
+        devices: list[dict] = []
+        seen: set[str] = set()
+
+        # Build the full set of groups to query (root + all descendants).
+        all_groups: dict[int, dict] = {}
+        for root_group in groups:
+            root_id = root_group.get("id")
+            if root_id is None:
+                continue
+            # Always include the root group itself.
+            all_groups[root_id] = root_group
+            # Recursively fetch sub-groups.
+            for sub in self._fetch_all_subgroups(root_id):
+                sub_id = sub.get("id")
+                if sub_id is not None and sub_id not in all_groups:
+                    all_groups[sub_id] = sub
+
+        for group in all_groups.values():
+            group_id = group.get("id")
+            if group_id is None:
+                continue
+            # Skip groups that are known to have zero direct device members to
+            # avoid unnecessary API calls.  When numOfDirectDevices is absent
+            # (older API versions), fall through and query anyway.
+            num_direct = group.get("numOfDirectDevices")
+            if num_direct is not None and int(num_direct) == 0:
+                continue
+            group_devices = self.list_paged(f"/device/groups/{group_id}/devices")
+            site_label = group.get("fullPath") or group.get("name") or str(group_id)
             for device in group_devices["items"]:
-                key = str(device.get("id") or f"{group['id']}:{device.get('name', '')}")
-                merged = {
-                    **device,
-                    "__siteGroup": group.get("fullPath") or group.get("name") or str(group.get("id") or "unknown-group"),
-                }
+                key = str(device.get("id") or f"{group_id}:{device.get('name', '')}")
                 if key not in seen:
                     seen.add(key)
-                    devices.append(merged)
+                    devices.append({
+                        **device,
+                        "__siteGroup": site_label,
+                    })
+
         return {
             "count_collected": len(devices),
             "items": devices,

@@ -154,11 +154,42 @@ python3 skills/logicmonitor-data-collection/scripts/build_logicmonitor_report_bu
 - `run/normalized/network_interface_throughput.json`
 - `run/normalized/logicmonitor_report_bundle.json`
 
+## Device collection behaviour — recursive sub-group traversal
+
+The LogicMonitor API endpoint `GET /device/groups/{id}/devices` returns only the
+**direct members** of that group. It does NOT recurse into sub-groups.
+
+Customers typically assign devices to leaf sub-groups several levels deep (e.g.
+`Altus Financial / Servers / SY3 / RDS`). The root group's `numOfHosts` metadata
+reflects the full recursive count, but a direct API call on the root group returns
+0 devices.
+
+**The collector handles this correctly** by:
+
+1. Enumerating all descendant sub-groups under the resolved root group via repeated
+   `GET /device/groups?filter=parentId:{id}` calls (breadth-first).
+2. Calling `GET /device/groups/{id}/devices` only on groups where
+   `numOfDirectDevices > 0`, skipping intermediate container groups.
+3. Deduplicating all collected devices by device `id` so that devices appearing in
+   multiple dynamic groups (e.g. "Windows Servers" and "Domain Controller") are
+   counted only once.
+4. Tagging each device with its leaf group `fullPath` as `__siteGroup` for
+   downstream site-level grouping.
+
+**Known LogicMonitor group patterns to be aware of:**
+
+- Root groups (e.g. `Customers/Nexon Clients/Altus Financial`) hold 0 direct devices.
+- Intermediate groups (e.g. `Servers`, `Public Cloud`) often hold 0 direct devices.
+- Leaf groups (e.g. `Servers/SY3/RDS`, `Devices by Type/Windows Servers`) hold direct devices.
+- Dynamic/view groups (e.g. `Devices by Type`, `Devices by Location`) cross-reference
+  the same physical devices under different classification trees — deduplication
+  ensures these are not double-counted.
+
 ## Coverage summary
 
 This skill now collects:
 
-- scoped devices, groups, alerts, and root website inventory
+- scoped devices, groups, alerts, and root website inventory (recursive sub-group traversal)
 - unmonitored devices
 - collectors
 - checkpoints
@@ -184,3 +215,4 @@ This is not yet a generic "collect every arbitrary LogicMonitor datasource" mode
 - Prefer the resolved root group plus descendant groups over broad tenant-wide reads.
 - Do not re-run collection just because drafting, rendering, review-mail, or artifact-delivery steps fail later. Reuse the bundle already produced for that run.
 - Treat one collected bundle as the run-scoped source of truth for all LogicMonitor-backed report sections.
+- Never call `/device/groups/{id}/devices` on the root group alone and treat 0 results as authoritative — always recurse into sub-groups first.

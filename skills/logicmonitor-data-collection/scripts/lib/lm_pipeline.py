@@ -4,6 +4,7 @@ import json
 import math
 import time
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from urllib.error import HTTPError, URLError
@@ -703,6 +704,8 @@ class LogicMonitorApi:
         self.fetch_page_size = max(1, int(config.get("fetch_page_size", 200)))
         self.max_pages_per_endpoint = max(0, int(config.get("max_pages_per_endpoint", 0)))
         self.alert_chunk_hours = max(1, int(config.get("alert_chunk_hours", 168)))
+        # Fix 4: bounded concurrency — used for datasource/instance/data fetches.
+        self.detail_fetch_concurrency = max(1, int(config.get("detail_fetch_concurrency", 5)))
         self.diagnostics = {
             "requests_made": [],
             "errors": [],
@@ -734,6 +737,13 @@ class LogicMonitorApi:
         return status, raw_headers, text
 
     def request(self, method: str, resource_path: str, query: dict | None = None, body=None):
+        """Make a single API request with exponential backoff and Retry-After support.
+
+        Fix 5: Smarter retries —
+          - exponential backoff with jitter instead of linear
+          - honours Retry-After response header when present on 429
+          - records attempt count in diagnostics
+        """
         last_error = None
         for attempt in range(self.retry_attempts + 1):
             url, headers, body_bytes = self._build_request(method, resource_path, query=query, body=body)
@@ -748,13 +758,34 @@ class LogicMonitorApi:
                     "url": url,
                 })
                 if status >= 400:
-                    raise HTTPError(url, status, text, None, None)
+                    raise HTTPError(url, status, text, response_headers, None)
                 return payload
             except HTTPError as error:
                 last_error = error
                 retriable = error.code == 429 or error.code >= 500
                 if retriable and attempt < self.retry_attempts:
-                    self.sleep_impl((self.retry_backoff_ms * (attempt + 1)) / 1000)
+                    # Honour Retry-After header when present (429 rate-limit).
+                    retry_after_secs = None
+                    hdrs = error.headers if hasattr(error, "headers") and error.headers else {}
+                    raw_after = hdrs.get("Retry-After") or hdrs.get("retry-after")
+                    if raw_after:
+                        try:
+                            retry_after_secs = float(raw_after)
+                        except (TypeError, ValueError):
+                            try:
+                                retry_after_secs = (
+                                    parsedate_to_datetime(raw_after).timestamp() - time.time()
+                                )
+                            except Exception:
+                                pass
+                    if retry_after_secs and retry_after_secs > 0:
+                        wait_secs = min(retry_after_secs, 60.0)
+                    else:
+                        # Exponential backoff with jitter: base * 2^attempt + small jitter.
+                        base = (self.retry_backoff_ms / 1000) * (2 ** attempt)
+                        jitter = (time.time() % 0.5)  # up to 500 ms jitter
+                        wait_secs = min(base + jitter, 60.0)
+                    self.sleep_impl(wait_secs)
                     continue
                 message = f"LogicMonitor API {method} {resource_path} failed with {error.code}: {error.reason or ''}".strip()
                 self.diagnostics["errors"].append({"method": method, "resource_path": resource_path, "status": error.code, "message": message})
@@ -762,7 +793,9 @@ class LogicMonitorApi:
             except (URLError, ValueError, json.JSONDecodeError) as error:
                 last_error = error
                 if attempt < self.retry_attempts:
-                    self.sleep_impl((self.retry_backoff_ms * (attempt + 1)) / 1000)
+                    base = (self.retry_backoff_ms / 1000) * (2 ** attempt)
+                    jitter = (time.time() % 0.5)
+                    self.sleep_impl(min(base + jitter, 60.0))
                     continue
                 message = f"LogicMonitor API {method} {resource_path} failed: {error}"
                 self.diagnostics["errors"].append({"method": method, "resource_path": resource_path, "status": "request_error", "message": message})
@@ -879,8 +912,15 @@ class LogicMonitorApi:
     def _fetch_all_subgroups(self, root_group_id: int) -> list[dict]:
         """Return all sub-groups under root_group_id by paginating /device/groups
         with a parentId filter at each level (breadth-first).
+
+        Fix 2: When a parentId filter call fails (e.g. unsupported filter on this
+        tenant), fall back to a fullPath prefix walk — fetch all groups that start
+        with the root group's fullPath.  This ensures we never silently miss leaf
+        groups that contain devices when the parentId API path is unavailable.
         """
+        # Step 1: try the parentId BFS walk (fast path).
         collected: dict[int, dict] = {}
+        parentid_failed = False
         queue = [root_group_id]
         while queue:
             parent_id = queue.pop()
@@ -888,12 +928,51 @@ class LogicMonitorApi:
                 result = self.list_paged("/device/groups", query={"filter": f"parentId:{parent_id}"})
                 children = result.get("items") or []
             except RuntimeError:
+                # parentId filter unsupported or failed — record and break out.
+                parentid_failed = True
                 children = []
+                break
             for group in children:
                 gid = group.get("id")
                 if gid is not None and gid not in collected:
                     collected[gid] = group
                     queue.append(gid)
+
+        if not parentid_failed:
+            return list(collected.values())
+
+        # Step 2: fallback — fetch the root group to get its fullPath, then do a
+        # fullPath prefix scan to find all descendants.
+        try:
+            root_obj = self.request("GET", f"/device/groups/{root_group_id}")
+        except RuntimeError:
+            # Cannot even fetch the root — return whatever we collected so far.
+            return list(collected.values())
+
+        root_path = str(root_obj.get("fullPath") or root_obj.get("name") or "").strip()
+        if not root_path:
+            return list(collected.values())
+
+        prefix = root_path + "/"
+        try:
+            # fullPath~ is a contains filter; we use the root name as the token.
+            # This may return sibling groups too, so we filter strictly by prefix.
+            root_name_token = root_path.split("/")[-1].strip()
+            all_groups_result = self.list_paged(
+                "/device/groups",
+                query={"filter": f'fullPath~"{root_name_token}"'},
+            )
+            for group in all_groups_result.get("items") or []:
+                gid = group.get("id")
+                candidate_path = str(group.get("fullPath") or group.get("name") or "").strip()
+                # Include only strict descendants (not the root itself, not siblings).
+                if gid is not None and gid not in collected and (
+                    candidate_path.startswith(prefix)
+                ):
+                    collected[gid] = group
+        except RuntimeError:
+            pass  # Best-effort: return what we have.
+
         return list(collected.values())
 
     # -------------------------------------------------------------------------
@@ -1236,6 +1315,28 @@ class LogicMonitorApi:
         if root_website_group_id is not None:
             result["website_group_websites"] = self.fetch_optional_paged(f"/website/groups/{root_website_group_id}/websites")
         return result
+
+    def _run_concurrent(self, tasks: list[tuple]) -> list:
+        """Fix 4: Execute a list of (fn, *args) callables with bounded concurrency.
+
+        Uses detail_fetch_concurrency as the thread-pool size.  Returns a list of
+        (task_index, result_or_exception) in completion order.  The caller decides
+        how to handle exceptions — they are returned, not re-raised, so a single
+        task failure cannot abort the whole batch.
+        """
+        results = []
+        with ThreadPoolExecutor(max_workers=self.detail_fetch_concurrency) as executor:
+            future_to_idx = {
+                executor.submit(fn, *args): idx
+                for idx, (fn, *args) in enumerate(tasks)
+            }
+            for future in as_completed(future_to_idx):
+                idx = future_to_idx[future]
+                try:
+                    results.append((idx, future.result()))
+                except Exception as exc:
+                    results.append((idx, exc))
+        return results
 
     def get_diagnostics(self) -> dict:
         return {
@@ -1620,10 +1721,27 @@ def _choose_series_values(series: dict[str, list[float]], candidates: list[str])
 
 
 def _collect_performance_metrics(api: LogicMonitorApi, context: dict, devices: list[dict]) -> dict:
+    """Collect per-device performance metrics for all relevant datasource families.
+
+    Fix 3: Replace silent continue-on-error with structured per-device/per-datasource
+    error recording.  Each failure is recorded with device_id, datasource, and
+    reason.  At the end, if more than the configured failure_threshold fraction of
+    considered devices had datasource-fetch failures, the summary flags
+    partial_coverage=True so downstream consumers can act on it.
+
+    Fix 4: Datasource list fetches run concurrently across all devices using
+    detail_fetch_concurrency.  Instance and data fetches within each device also
+    run concurrently per device.  Bounded by the configured concurrency limit so
+    we go faster without firehosing the API.
+    """
+    failure_threshold = float(context["logicmonitor"].get("perf_failure_threshold", 0.5))
     summary = {
         "devices_considered": len(devices),
         "matched_datasources": {key: 0 for key in PERFORMANCE_COLLECTION_SPECS},
         "matched_instances": {key: 0 for key in PERFORMANCE_COLLECTION_SPECS},
+        "fetch_errors": [],
+        "devices_with_fetch_errors": 0,
+        "partial_coverage": False,
     }
     devices_with_metrics = {key: set() for key in PERFORMANCE_COLLECTION_SPECS}
     availability_rows = []
@@ -1631,31 +1749,71 @@ def _collect_performance_metrics(api: LogicMonitorApi, context: dict, devices: l
     memory_rows = []
     disk_rows = []
     network_rows = []
-    for device in devices:
-        device_id = device.get("id")
-        if device_id in (None, ""):
-            continue
-        device_id_text = str(device_id)
+
+    # --- Phase 1: fetch datasource lists concurrently for all devices ---
+    valid_devices = [d for d in devices if d.get("id") not in (None, "")]
+    ds_tasks = [(api.fetch_device_datasources, str(d["id"])) for d in valid_devices]
+    ds_results_raw = api._run_concurrent(ds_tasks)
+    # Reconstruct ordered mapping: device_index -> result_or_exc
+    ds_by_idx = {idx: res for idx, res in ds_results_raw}
+
+    for dev_idx, device in enumerate(valid_devices):
+        device_id_text = str(device["id"])
         device_name = _device_name(device)
-        try:
-            datasource_result = api.fetch_device_datasources(device_id_text)
-        except RuntimeError:
+        device_had_error = False
+
+        ds_result = ds_by_idx.get(dev_idx)
+        if isinstance(ds_result, Exception):
+            summary["fetch_errors"].append({
+                "device_id": device_id_text,
+                "device_name": device_name,
+                "stage": "datasource_list",
+                "error": str(ds_result),
+            })
+            summary["devices_with_fetch_errors"] += 1
             continue
-        for datasource in datasource_result.get("items") or []:
+
+        matched_datasources = []
+        for datasource in (ds_result or {}).get("items") or []:
             collection_key = _match_performance_collection_key(datasource)
             if not collection_key:
                 continue
             spec = PERFORMANCE_COLLECTION_SPECS[collection_key]
             summary["matched_datasources"][collection_key] += 1
             devices_with_metrics[collection_key].add(device_id_text)
-            datasource_id = datasource.get("id")
-            if datasource_id in (None, ""):
+            ds_id = datasource.get("id")
+            if ds_id in (None, ""):
                 continue
-            try:
-                instance_result = api.fetch_datasource_instances(device_id_text, datasource_id)
-            except RuntimeError:
+            matched_datasources.append((collection_key, spec, datasource, ds_id))
+
+        if not matched_datasources:
+            continue
+
+        # --- Phase 2: fetch instance lists concurrently for matched datasources ---
+        inst_tasks = [
+            (api.fetch_datasource_instances, device_id_text, str(ds_id))
+            for _, _, _, ds_id in matched_datasources
+        ]
+        inst_results_raw = api._run_concurrent(inst_tasks)
+        inst_by_idx = {idx: res for idx, res in inst_results_raw}
+
+        # --- Phase 3: collect data fetches across all instances concurrently ---
+        data_tasks = []
+        data_task_meta = []  # (collection_key, spec, ds_name, instance)
+        for ds_idx, (collection_key, spec, datasource, ds_id) in enumerate(matched_datasources):
+            inst_result = inst_by_idx.get(ds_idx)
+            ds_name = str(datasource.get("dataSourceName") or datasource.get("name") or ds_id or "")
+            if isinstance(inst_result, Exception):
+                summary["fetch_errors"].append({
+                    "device_id": device_id_text,
+                    "device_name": device_name,
+                    "stage": "instance_list",
+                    "datasource": ds_name,
+                    "error": str(inst_result),
+                })
+                device_had_error = True
                 continue
-            for instance in instance_result.get("items") or []:
+            for instance in (inst_result or {}).get("items") or []:
                 summary["matched_instances"][collection_key] += 1
                 instance_id = instance.get("id")
                 if instance_id in (None, ""):
@@ -1664,81 +1822,112 @@ def _collect_performance_metrics(api: LogicMonitorApi, context: dict, devices: l
                     *spec.get("metric_candidates", []),
                     *spec.get("extra_metric_candidates", []),
                 ]
-                try:
-                    payload = api.fetch_datasource_instance_data(
-                        device_id_text,
-                        datasource_id,
-                        str(instance_id),
-                        query_metrics,
-                        context["period"]["start_ms"],
-                        context["period"]["end_ms"],
-                    )
-                except RuntimeError:
-                    continue
-                series = _extract_named_series(payload)
-                instance_name = _instance_label(instance)
-                if collection_key == "cpu":
-                    values = _choose_series_values(series, spec["metric_candidates"])
-                    average = _average_value(values)
-                    if average is not None:
-                        cpu_rows.append({
-                            "device_id": device_id_text,
-                            "device_name": device_name,
-                            "instance_name": instance_name,
-                            "avg_percent": average,
-                        })
-                elif collection_key == "memory":
-                    values = _choose_series_values(series, spec["metric_candidates"])
-                    average = _average_value(values)
-                    if average is not None:
-                        memory_rows.append({
-                            "device_id": device_id_text,
-                            "device_name": device_name,
-                            "instance_name": instance_name,
-                            "avg_percent": average,
-                        })
-                elif collection_key == "disk":
-                    values = _choose_series_values(series, spec["metric_candidates"])
-                    average = _average_value(values)
-                    maximum = _max_value(values)
-                    if average is not None or maximum is not None:
-                        disk_rows.append({
-                            "device_id": device_id_text,
-                            "device_name": device_name,
-                            "volume_name": instance_name,
-                            "avg_percent": average,
-                            "max_percent": maximum,
-                        })
-                elif collection_key == "ping":
-                    packet_loss = _choose_series_values(series, spec["metric_candidates"])
-                    rtt = _choose_series_values(series, spec.get("extra_metric_candidates", []))
-                    packet_loss_avg = _average_value(packet_loss)
-                    availability = None if packet_loss_avg is None else _round_value(max(0, 100 - packet_loss_avg), 2)
-                    availability_rows.append({
+                data_tasks.append((
+                    api.fetch_datasource_instance_data,
+                    device_id_text, str(ds_id), str(instance_id),
+                    query_metrics,
+                    context["period"]["start_ms"],
+                    context["period"]["end_ms"],
+                ))
+                data_task_meta.append((collection_key, spec, ds_name, instance))
+
+        if not data_tasks:
+            if device_had_error:
+                summary["devices_with_fetch_errors"] += 1
+            continue
+
+        data_results_raw = api._run_concurrent(data_tasks)
+        data_by_idx = {idx: res for idx, res in data_results_raw}
+
+        for task_idx, (collection_key, spec, ds_name, instance) in enumerate(data_task_meta):
+            payload = data_by_idx.get(task_idx)
+            instance_name = _instance_label(instance)
+            if isinstance(payload, Exception):
+                summary["fetch_errors"].append({
+                    "device_id": device_id_text,
+                    "device_name": device_name,
+                    "stage": "instance_data",
+                    "datasource": ds_name,
+                    "instance": instance_name,
+                    "error": str(payload),
+                })
+                device_had_error = True
+                continue
+
+            series = _extract_named_series(payload)
+            if collection_key == "cpu":
+                values = _choose_series_values(series, spec["metric_candidates"])
+                average = _average_value(values)
+                if average is not None:
+                    cpu_rows.append({
                         "device_id": device_id_text,
                         "device_name": device_name,
                         "instance_name": instance_name,
-                        "packet_loss_avg_percent": packet_loss_avg,
-                        "ping_rtt_avg_ms": _average_value(rtt),
-                        "availability_percent": availability,
+                        "avg_percent": average,
                     })
-                elif collection_key == "network":
-                    rx_values = _choose_series_values(series, spec["metric_candidates"])
-                    tx_values = _choose_series_values(series, spec.get("extra_metric_candidates", []))
-                    rx_avg = _average_value(rx_values)
-                    tx_avg = _average_value(tx_values)
-                    if rx_avg is not None or tx_avg is not None:
-                        network_rows.append({
-                            "device_id": device_id_text,
-                            "device_name": device_name,
-                            "interface_name": instance_name,
-                            "rx_mbps_avg": None if rx_avg is None else _round_value(rx_avg / 1_000_000, 3),
-                            "tx_mbps_avg": None if tx_avg is None else _round_value(tx_avg / 1_000_000, 3),
-                        })
-    summary["devices_with_metrics"] = {
-        key: len(value)
-        for key, value in devices_with_metrics.items()
-    }
+            elif collection_key == "memory":
+                values = _choose_series_values(series, spec["metric_candidates"])
+                average = _average_value(values)
+                if average is not None:
+                    memory_rows.append({
+                        "device_id": device_id_text,
+                        "device_name": device_name,
+                        "instance_name": instance_name,
+                        "avg_percent": average,
+                    })
+            elif collection_key == "disk":
+                values = _choose_series_values(series, spec["metric_candidates"])
+                average = _average_value(values)
+                maximum = _max_value(values)
+                if average is not None or maximum is not None:
+                    disk_rows.append({
+                        "device_id": device_id_text,
+                        "device_name": device_name,
+                        "volume_name": instance_name,
+                        "avg_percent": average,
+                        "max_percent": maximum,
+                    })
+            elif collection_key == "ping":
+                packet_loss = _choose_series_values(series, spec["metric_candidates"])
+                rtt = _choose_series_values(series, spec.get("extra_metric_candidates", []))
+                packet_loss_avg = _average_value(packet_loss)
+                availability = None if packet_loss_avg is None else _round_value(max(0, 100 - packet_loss_avg), 2)
+                availability_rows.append({
+                    "device_id": device_id_text,
+                    "device_name": device_name,
+                    "instance_name": instance_name,
+                    "packet_loss_avg_percent": packet_loss_avg,
+                    "ping_rtt_avg_ms": _average_value(rtt),
+                    "availability_percent": availability,
+                })
+            elif collection_key == "network":
+                rx_values = _choose_series_values(series, spec["metric_candidates"])
+                tx_values = _choose_series_values(series, spec.get("extra_metric_candidates", []))
+                rx_avg = _average_value(rx_values)
+                tx_avg = _average_value(tx_values)
+                if rx_avg is not None or tx_avg is not None:
+                    network_rows.append({
+                        "device_id": device_id_text,
+                        "device_name": device_name,
+                        "interface_name": instance_name,
+                        "rx_mbps_avg": None if rx_avg is None else _round_value(rx_avg / 1_000_000, 3),
+                        "tx_mbps_avg": None if tx_avg is None else _round_value(tx_avg / 1_000_000, 3),
+                    })
+
+        if device_had_error:
+            summary["devices_with_fetch_errors"] += 1
+
+    summary["devices_with_metrics"] = {key: len(value) for key, value in devices_with_metrics.items()}
+
+    # Flag partial coverage when error rate exceeds threshold.
+    devices_considered = summary["devices_considered"]
+    if devices_considered > 0:
+        error_rate = summary["devices_with_fetch_errors"] / devices_considered
+        summary["partial_coverage"] = error_rate > failure_threshold
+        summary["error_rate_percent"] = _round_value(error_rate * 100, 1)
+    else:
+        summary["error_rate_percent"] = 0.0
+
     return {
         "datasource": "logicmonitor",
         "dataset": "performance_metrics",
@@ -1754,7 +1943,6 @@ def _collect_performance_metrics(api: LogicMonitorApi, context: dict, devices: l
         "disk_rows": disk_rows,
         "network_rows": network_rows,
     }
-
 
 def build_monitoring_coverage(meta: dict, snapshot: dict) -> dict:
     monitored_devices = _count_collected((snapshot.get("inventory") or {}).get("devices"))

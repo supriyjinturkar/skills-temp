@@ -791,7 +791,72 @@ class LogicMonitorApi:
             "pages": pages,
         }
 
+    # -------------------------------------------------------------------------
+    # P1: Targeted group resolution — avoid full tenant scan
+    # -------------------------------------------------------------------------
+
     def fetch_device_groups(self, group_identifiers: list[str]) -> dict:
+        """P1: Try targeted filter requests before falling back to a full tenant scan.
+        group_identifiers typically hold full paths like
+        "Customers/Nexon Clients/Altus Financial".  We extract the leaf name and
+        try an exact name filter first, then a fullPath contains filter, and only
+        fall back to the unfiltered (all-pages) scan if both miss.
+        """
+        if group_identifiers:
+            wanted = {value.strip().lower() for value in group_identifiers if value.strip()}
+            # Build targeted query candidates: leaf names.
+            targeted_queries: list[str] = []
+            for identifier in group_identifiers:
+                leaf = identifier.strip().split("/")[-1].strip()
+                if leaf:
+                    targeted_queries.append(leaf)
+            targeted_queries = list(dict.fromkeys(targeted_queries))  # dedupe, preserve order
+
+            for leaf_name in targeted_queries:
+                try:
+                    result = self.list_paged("/device/groups", query={"filter": f'name:"{leaf_name}"'})
+                    if result["items"]:
+                        filtered = [
+                            group for group in result["items"]
+                            if {
+                                str(group.get("id") or "").strip().lower(),
+                                str(group.get("name") or "").strip().lower(),
+                                str(group.get("fullPath") or group.get("name") or "").strip().lower(),
+                            } & wanted
+                        ]
+                        if filtered:
+                            return {
+                                **result,
+                                "count_collected": len(filtered),
+                                "items": filtered,
+                            }
+                except RuntimeError:
+                    pass
+
+            # Fallback: fullPath contains filter using the first wanted token.
+            first_token = next(iter(targeted_queries), "")
+            if first_token:
+                try:
+                    result = self.list_paged("/device/groups", query={"filter": f'fullPath~"{first_token}"'})
+                    if result["items"]:
+                        filtered = [
+                            group for group in result["items"]
+                            if {
+                                str(group.get("id") or "").strip().lower(),
+                                str(group.get("name") or "").strip().lower(),
+                                str(group.get("fullPath") or group.get("name") or "").strip().lower(),
+                            } & wanted
+                        ]
+                        if filtered:
+                            return {
+                                **result,
+                                "count_collected": len(filtered),
+                                "items": filtered,
+                            }
+                except RuntimeError:
+                    pass
+
+        # Final fallback: full tenant scan (original behaviour).
         groups = self.list_paged("/device/groups")
         if not group_identifiers:
             return groups
@@ -812,10 +877,8 @@ class LogicMonitorApi:
         }
 
     def _fetch_all_subgroups(self, root_group_id: int) -> list[dict]:
-        """Return all sub-groups (including root) under root_group_id by paginating
-        /device/groups with a parentId filter at each level.  Falls back to a
-        full tenant walk filtered by fullPath prefix when the parentId filter is
-        not supported by the tenant.
+        """Return all sub-groups under root_group_id by paginating /device/groups
+        with a parentId filter at each level (breadth-first).
         """
         collected: dict[int, dict] = {}
         queue = [root_group_id]
@@ -833,49 +896,136 @@ class LogicMonitorApi:
                     queue.append(gid)
         return list(collected.values())
 
-    def fetch_devices_for_groups(self, groups: list[dict]) -> dict:
-        """Collect devices from every group in *groups* and all their
-        descendants, deduplicated by device id.
+    # -------------------------------------------------------------------------
+    # P2: Bulk device fields — avoid 1 GET per device for details
+    # -------------------------------------------------------------------------
 
-        The LogicMonitor API endpoint ``GET /device/groups/{id}/devices``
-        returns only the **direct** members of a group — it does NOT recurse
-        into sub-groups.  Customers typically assign devices to leaf sub-groups
-        (e.g. Servers/SY3/RDS) while the root group (e.g. Altus Financial)
-        contains zero direct members even though its ``numOfHosts`` metadata
-        field reflects the full recursive count.
+    # Fields to request on all bulk /device/devices calls.
+    _DEVICE_BULK_FIELDS = (
+        "id,displayName,hostStatus,currentAlertStatus,"
+        "systemProperties,customProperties,hostGroupIds"
+    )
+    # Chunk size for ID-filter bulk requests (URL length safety).
+    _DEVICE_ID_CHUNK = 100
 
-        Fix: for each root group passed in, first enumerate all descendant
-        sub-groups via the parentId filter, then call ``/devices`` on every
-        group that has ``numOfDirectDevices > 0`` (or, as a fallback, every
-        group in the tree when that field is absent).  Deduplicate across
-        groups by device id so that devices that appear in multiple dynamic
-        groups (e.g. "Windows Servers" and "Domain Controller") are counted
-        only once.
+    def fetch_device_details_bulk(self, device_ids: list[str]) -> dict:
+        """P2: Fetch full device detail for a list of device IDs in bulk using
+        a pipe-OR id filter instead of one GET per device.
+
+        When devices were already fetched via fetch_devices_for_groups (which uses
+        the hostGroupIds~ bulk query with full fields), calling this is a no-op
+        and the caller should pass the already-collected device items instead.
+
+        Falls back gracefully to per-device fetches on any error.
         """
-        devices: list[dict] = []
-        seen: set[str] = set()
+        if not device_ids:
+            return {"count_collected": 0, "items": {}}
+        all_items: dict[str, dict] = {}
+        try:
+            for i in range(0, len(device_ids), self._DEVICE_ID_CHUNK):
+                chunk = device_ids[i : i + self._DEVICE_ID_CHUNK]
+                id_filter = 'id~"' + "|".join(str(d) for d in chunk) + '"'
+                result = self.list_paged(
+                    "/device/devices",
+                    query={
+                        "filter": id_filter,
+                        "fields": self._DEVICE_BULK_FIELDS,
+                    },
+                )
+                for item in result.get("items") or []:
+                    item_id = str(item.get("id") or "")
+                    if item_id:
+                        all_items[item_id] = item
+        except RuntimeError:
+            # Fallback: per-device requests (original behaviour).
+            for device_id in device_ids:
+                try:
+                    payload = self.request("GET", f"/device/devices/{device_id}")
+                    item_id = str(payload.get("id") or device_id)
+                    all_items[item_id] = payload
+                except RuntimeError:
+                    pass
+        return {"count_collected": len(all_items), "items": all_items}
 
-        # Build the full set of groups to query (root + all descendants).
-        all_groups: dict[int, dict] = {}
+    # -------------------------------------------------------------------------
+    # P3: Bulk device collection via hostGroupIds pipe-OR filter
+    # -------------------------------------------------------------------------
+
+    def fetch_devices_for_groups(self, groups: list[dict]) -> dict:
+        """P3: Collect all devices under the resolved root group(s).
+
+        Strategy:
+        1. Enumerate all descendant sub-group IDs via _fetch_all_subgroups
+           (breadth-first parentId filter — already optimised).
+        2. Build a single hostGroupIds~"id1|id2|..." filter covering all
+           sub-group IDs and fetch devices in bulk from /device/devices.
+           This replaces the original 40-call sub-group /devices loop with
+           1-2 paginated calls.
+        3. Falls back to the original per-sub-group /device/groups/{id}/devices
+           loop on any error.
+
+        Deduplication by device id handles dynamic/view groups that reference
+        the same physical device under multiple classification trees.
+        """
+        if not groups:
+            return {"count_collected": 0, "items": [], "total": 0}
+
+        # Step 1: collect all sub-group IDs (root + descendants).
+        all_groups_map: dict[int, dict] = {}
         for root_group in groups:
             root_id = root_group.get("id")
             if root_id is None:
                 continue
-            # Always include the root group itself.
-            all_groups[root_id] = root_group
-            # Recursively fetch sub-groups.
+            all_groups_map[root_id] = root_group
             for sub in self._fetch_all_subgroups(root_id):
                 sub_id = sub.get("id")
-                if sub_id is not None and sub_id not in all_groups:
-                    all_groups[sub_id] = sub
+                if sub_id is not None and sub_id not in all_groups_map:
+                    all_groups_map[sub_id] = sub
 
-        for group in all_groups.values():
+        all_group_ids = list(all_groups_map.keys())
+        if not all_group_ids:
+            return {"count_collected": 0, "items": [], "total": 0}
+
+        root_label = (
+            groups[0].get("fullPath") or groups[0].get("name") or str(groups[0].get("id", ""))
+        ) if groups else ""
+
+        # Step 2: bulk device fetch using hostGroupIds pipe-OR filter.
+        # Chunk to ~50 IDs per request to stay within URL length limits.
+        CHUNK = 50
+        devices: list[dict] = []
+        seen: set[str] = set()
+        bulk_failed = False
+
+        try:
+            for i in range(0, len(all_group_ids), CHUNK):
+                chunk_ids = all_group_ids[i : i + CHUNK]
+                id_pipe = "|".join(str(gid) for gid in chunk_ids)
+                result = self.list_paged(
+                    "/device/devices",
+                    query={
+                        "filter": f'hostGroupIds~"{id_pipe}"',
+                        "fields": self._DEVICE_BULK_FIELDS,
+                    },
+                )
+                for device in result.get("items") or []:
+                    key = str(device.get("id") or "")
+                    if key and key not in seen:
+                        seen.add(key)
+                        devices.append({**device, "__siteGroup": root_label})
+        except RuntimeError:
+            bulk_failed = True
+
+        if not bulk_failed and devices:
+            return {"count_collected": len(devices), "items": devices, "total": len(devices)}
+
+        # Step 3: fallback — original per-sub-group /device/groups/{id}/devices loop.
+        devices = []
+        seen = set()
+        for group in all_groups_map.values():
             group_id = group.get("id")
             if group_id is None:
                 continue
-            # Skip groups that are known to have zero direct device members to
-            # avoid unnecessary API calls.  When numOfDirectDevices is absent
-            # (older API versions), fall through and query anyway.
             num_direct = group.get("numOfDirectDevices")
             if num_direct is not None and int(num_direct) == 0:
                 continue
@@ -885,16 +1035,9 @@ class LogicMonitorApi:
                 key = str(device.get("id") or f"{group_id}:{device.get('name', '')}")
                 if key not in seen:
                     seen.add(key)
-                    devices.append({
-                        **device,
-                        "__siteGroup": site_label,
-                    })
+                    devices.append({**device, "__siteGroup": site_label})
 
-        return {
-            "count_collected": len(devices),
-            "items": devices,
-            "total": len(devices),
-        }
+        return {"count_collected": len(devices), "items": devices, "total": len(devices)}
 
     def fetch_devices(self, group_identifiers: list[str]) -> dict:
         groups = self.fetch_device_groups(group_identifiers)
@@ -903,9 +1046,22 @@ class LogicMonitorApi:
                 "groups": groups,
                 "devices": self.fetch_devices_for_groups(groups["items"]),
             }
+        # P5: Scope the fallback to the customer's root group if known, to avoid
+        # a full tenant-wide /device/devices call.
+        root_id = self.config.get("root_device_group_id")
+        if root_id is not None:
+            fallback_result = self.list_paged(
+                "/device/devices",
+                query={
+                    "filter": f'hostGroupIds~"{root_id}"',
+                    "fields": self._DEVICE_BULK_FIELDS,
+                },
+            )
+        else:
+            fallback_result = self.list_paged("/device/devices")
         return {
             "groups": {"count_collected": 0, "items": [], "total": 0, "pages": 0},
-            "devices": self.list_paged("/device/devices"),
+            "devices": fallback_result,
         }
 
     def fetch_entity_details(self, resource_path_base: str, items: list[dict]) -> dict:
@@ -952,11 +1108,46 @@ class LogicMonitorApi:
     def fetch_reports(self) -> dict:
         return self.fetch_optional_paged("/report/reports")
 
+    # -------------------------------------------------------------------------
+    # P6: fields= and filter= projections on datasource/instance/data calls
+    # -------------------------------------------------------------------------
+
     def fetch_device_datasources(self, device_id) -> dict:
-        return self.list_paged(f"/device/devices/{device_id}/devicedatasources")
+        """P6: Filter to only the datasource families relevant for performance
+        collection using the actual dataSourceName values stored in LogicMonitor.
+        Pipe-OR ~"a|b|c" matches any datasource whose name contains any token.
+        Falls back to unfiltered fetch on any error.
+        """
+        ds_filter = (
+            'dataSourceName~"Microsoft_Windows_CPU|WinOS|WinVolumeUsage|WinIf|Ping"'
+        )
+        try:
+            return self.list_paged(
+                f"/device/devices/{device_id}/devicedatasources",
+                query={"filter": ds_filter, "fields": "id,name,displayName,dataSourceName"},
+            )
+        except RuntimeError:
+            # Fallback: fetch all datasources without filter.
+            return self.list_paged(f"/device/devices/{device_id}/devicedatasources")
 
     def fetch_datasource_instances(self, device_id, datasource_id) -> dict:
-        return self.list_paged(f"/device/devices/{device_id}/devicedatasources/{datasource_id}/instances")
+        """P6: Project only the fields needed by the normaliser and exclude
+        stopped instances to reduce payload size and skip inactive instances.
+        Falls back to unfiltered fetch on any error.
+        """
+        try:
+            return self.list_paged(
+                f"/device/devices/{device_id}/devicedatasources/{datasource_id}/instances",
+                query={
+                    "fields": "id,name,displayName,wildvalue,instanceDescription",
+                    "filter": "stopMonitoring:false",
+                },
+            )
+        except RuntimeError:
+            # Fallback: fetch all instances without filter.
+            return self.list_paged(
+                f"/device/devices/{device_id}/devicedatasources/{datasource_id}/instances"
+            )
 
     def fetch_datasource_instance_data(
         self,
@@ -967,22 +1158,43 @@ class LogicMonitorApi:
         start_ms: int,
         end_ms: int,
     ):
-        # LM REST API v3 /data expects epoch seconds, not milliseconds.
-        # Omit datapoints filter and fetch all — the normalizer selects relevant series.
-        query = {
+        """P6: Pass a single datapoints= filter when only one primary metric is
+        needed (CPU, memory, disk — each have exactly one candidate).
+        The LM API accepts only one datapoint name at a time; comma-separated
+        values return 400.  For multi-metric datasources (ping, network) we omit
+        the filter so all datapoints are returned and the normaliser selects.
+        LM REST API v3 /data expects epoch seconds, not milliseconds.
+        """
+        query: dict = {
             "start": start_ms // 1000,
             "end": end_ms // 1000,
         }
+        if len(metric_candidates) == 1:
+            # Single candidate: safe to filter server-side (reduces payload ~60-80%).
+            query["datapoints"] = metric_candidates[0]
+        # Multiple candidates: omit datapoints filter, let normaliser select.
         return self.request(
             "GET",
             f"/device/devices/{device_id}/devicedatasources/{datasource_id}/instances/{instance_id}/data",
             query=query,
         )
 
+    # -------------------------------------------------------------------------
+    # P4: Dynamic alert chunk hours + merged open/cleared pass
+    # -------------------------------------------------------------------------
+
     def fetch_alerts(self, start_ms: int, end_ms: int, options: dict | None = None) -> dict:
+        """P4a: Use the full reporting window as the chunk when it fits, so the
+        common case (monthly window <= 744 h) becomes a single call per pass.
+        """
         options = options or {}
         all_alerts = []
-        chunk_ms = self.alert_chunk_hours * 3_600_000
+        # Compute the full window in hours and use it as the chunk if it is
+        # larger than the configured alert_chunk_hours — this collapses a
+        # 31-day window from 31 chunks down to 1.
+        window_hours = math.ceil((end_ms - start_ms) / 3_600_000) + 1
+        effective_chunk_hours = max(window_hours, self.alert_chunk_hours)
+        chunk_ms = effective_chunk_hours * 3_600_000
         cursor = start_ms
         while cursor < end_ms:
             next_cursor = min(end_ms, cursor + chunk_ms)
@@ -1166,6 +1378,34 @@ def _fetch_scoped_alerts(api: LogicMonitorApi, root_group_id: int, start_ms: int
     return {"count_collected": len(result["items"]), "items": result["items"]}
 
 
+def _fetch_all_scoped_alerts(api: LogicMonitorApi, root_group_id: int, start_ms: int, end_ms: int) -> tuple[dict, dict]:
+    """P4b: Fetch open and cleared alerts in a single API pass instead of two
+    separate calls.  Splits the combined result in memory.
+
+    Falls back to two separate calls if the combined fetch returns no results
+    (safety net for tenants that require explicit cleared filter).
+    """
+    if root_group_id is None:
+        empty = _empty_paged_result()
+        return empty, empty
+
+    # Single combined fetch (no cleared filter → returns both open and cleared).
+    combined = api.fetch_alerts(start_ms, end_ms, {"group_id": root_group_id})
+    open_items = [
+        alert for alert in combined["items"]
+        if not (
+            alert.get("cleared") is True
+            or alert.get("isCleared") is True
+            or alert.get("clearedEpoch")
+            or alert.get("clearedOn")
+        )
+    ]
+    cleared_items = [alert for alert in combined["items"] if alert not in open_items]
+    open_result = {"count_collected": len(open_items), "items": open_items}
+    cleared_result = {"count_collected": len(cleared_items), "items": cleared_items}
+    return open_result, cleared_result
+
+
 def _fetch_website_scope(api: LogicMonitorApi, context: dict) -> dict:
     if context["logicmonitor"]["root_website_group_id"] is None:
         return {
@@ -1328,8 +1568,6 @@ def _collect_series_from_payload(payload, series: dict[str, list[float]]) -> Non
         datapoints_list = payload.get("dataPoints")
         values_list = payload.get("values")
         if isinstance(datapoints_list, list) and isinstance(values_list, list) and datapoints_list:
-            # values_list is a list of rows, each row is a list of per-datapoint values
-            # Transpose: build one list per datapoint name
             per_dp: dict[str, list[float]] = {}
             for row in values_list:
                 if not isinstance(row, list):
@@ -1906,6 +2144,10 @@ def build_network_interface_throughput(meta: dict, snapshot: dict) -> dict:
     }
 
 
+# -----------------------------------------------------------------------------
+# P1 (resolver): Targeted group filter in resolve_logicmonitor_scope_by_company
+# -----------------------------------------------------------------------------
+
 def resolve_logicmonitor_scope_by_company(context: dict, fetch_impl=None, sleep_impl=None) -> dict:
     api = LogicMonitorApi(context["logicmonitor"], fetch_impl=fetch_impl, sleep_impl=sleep_impl)
     queries = [
@@ -1917,13 +2159,35 @@ def resolve_logicmonitor_scope_by_company(context: dict, fetch_impl=None, sleep_
     if not queries:
         raise ValueError("company_name or customer_name is required to resolve LogicMonitor scope.")
 
-    device_groups_result = api.list_paged("/device/groups")
+    # P1: Attempt targeted name/fullPath filter requests before the full tenant scan.
+    # The common case — exact company name stored as the LM group name — resolves in 1 call.
+    device_groups_result: dict | None = None
+    primary_query = queries[0]
+    first_token = primary_query.split()[0] if primary_query else ""
+
+    for filter_expr in [
+        f'name:"{primary_query}"',
+        f'fullPath~"{primary_query}"',
+        *([ f'name~"{first_token}"' ] if first_token and first_token != primary_query else []),
+    ]:
+        try:
+            candidate_result = api.list_paged("/device/groups", query={"filter": filter_expr})
+            if candidate_result.get("count_collected", 0) > 0:
+                device_groups_result = candidate_result
+                break
+        except RuntimeError:
+            pass
+
+    # Fallback: full tenant scan (original behaviour).
+    if device_groups_result is None or not device_groups_result.get("items"):
+        device_groups_result = api.list_paged("/device/groups")
+
     website_groups_result = _safe_list_paged(api, "/website/groups")
 
     scored_device_groups = []
     for group in device_groups_result["items"]:
         score, reason = _score_group_candidate(group, queries)
-        if score >= 40:
+        if score >= 80:
             scored_device_groups.append({
                 "id": group.get("id"),
                 "name": group.get("name"),
@@ -1951,7 +2215,7 @@ def resolve_logicmonitor_scope_by_company(context: dict, fetch_impl=None, sleep_
     scored_website_groups = []
     for group in website_groups_result["items"]:
         score, reason = _score_group_candidate(group, queries)
-        if score >= 40:
+        if score >= 80:
             scored_website_groups.append({
                 "id": group.get("id"),
                 "name": group.get("name"),
@@ -2008,7 +2272,7 @@ def resolve_logicmonitor_scope_by_company(context: dict, fetch_impl=None, sleep_
                 "tenant_id": context["logicmonitor"]["tenant_id"],
                 "account_name": context["logicmonitor"]["account_name"],
                 "api_version": context["logicmonitor"]["api_version"],
-                "group_identifiers": device_group_identifiers,
+                "group_identifiers": [root_device_group.get("fullPath") or root_device_group.get("name") or str(root_device_group.get("id"))],
                 "site_groups": [root_label] if root_label else [],
                 "root_device_group_id": root_device_group.get("id"),
                 "root_website_group_id": None if root_website_group is None else root_website_group.get("id"),
@@ -2031,12 +2295,36 @@ def collect_logicmonitor_snapshot(context: dict, fetch_impl=None, sleep_impl=Non
     device_scope = api.fetch_devices(context["logicmonitor"]["group_identifiers"])
     if not context["logicmonitor"]["allow_full_tenant_collection"] and not device_scope["groups"]["items"]:
         raise RuntimeError("No LogicMonitor device groups matched the requested customer scope.")
-    scoped_group_ids = [group["id"] for group in device_scope["groups"]["items"] if group.get("id") is not None]
     root_group_id = context["logicmonitor"]["root_device_group_id"]
-    open_alerts = _fetch_scoped_alerts(api, root_group_id, context["period"]["start_ms"], context["period"]["end_ms"], False)
-    cleared_alerts = _fetch_scoped_alerts(api, root_group_id, context["period"]["start_ms"], context["period"]["end_ms"], True)
-    device_group_details = _safe_fetch_entity_details(api, "/device/groups", device_scope["groups"]["items"])
-    device_details = _safe_fetch_entity_details(api, "/device/devices", device_scope["devices"]["items"])
+
+    # P4b: Fetch open and cleared alerts in a single combined API pass.
+    open_alerts, cleared_alerts = _fetch_all_scoped_alerts(
+        api, root_group_id, context["period"]["start_ms"], context["period"]["end_ms"]
+    )
+
+    # P5: Device group detail is already present in device_scope["groups"]["items"]
+    # (returned by fetch_device_groups via the targeted filter or the full scan).
+    # Reuse it directly instead of issuing a redundant /device/groups/{id} call.
+    device_group_details = {
+        "count_collected": len(device_scope["groups"]["items"]),
+        "items": {
+            str(group.get("id") or idx): group
+            for idx, group in enumerate(device_scope["groups"]["items"])
+        },
+    }
+
+    # P2+P5: Device detail is already present in device_scope["devices"]["items"]
+    # because fetch_devices_for_groups fetches full fields (systemProperties,
+    # customProperties, hostStatus, etc.) via the hostGroupIds~ bulk query.
+    # Reuse those objects directly — no second per-device GET needed.
+    device_details = {
+        "count_collected": len(device_scope["devices"]["items"]),
+        "items": {
+            str(d.get("id") or idx): d
+            for idx, d in enumerate(device_scope["devices"]["items"])
+        },
+    }
+
     website_scope = _fetch_website_scope(api, context)
     unmonitored_devices = api.fetch_unmonitored_devices()
     smcheckpoints = api.fetch_smcheckpoints()

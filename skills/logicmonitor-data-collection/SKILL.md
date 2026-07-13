@@ -106,7 +106,7 @@ Expected resolver payload shape:
 {
   "resolved_scope": {
     "logicmonitor": {
-      "group_identifiers": ["Nexon/Customer A", "Nexon/Customer A/Servers"],
+      "group_identifiers": ["Customers/Nexon Clients/Customer A"],
       "root_device_group_id": 101,
       "root_website_group_id": 201,
       "site_groups": ["Customer A"]
@@ -115,7 +115,28 @@ Expected resolver payload shape:
 }
 ```
 
-Use the returned `logicmonitor` object as the scoped source for collection.
+`group_identifiers` contains **only the single root full path**. The collector recurses into
+sub-groups internally via `_fetch_all_subgroups`. Do NOT expand `descendant_groups` from the
+resolver output into `group_identifiers` — that list is for resolver scoring only and must not
+be used as the collection scope.
+
+Merge using **only** `resolved_scope.logicmonitor`, never `device_group_resolution.descendant_groups`:
+
+```python
+import json
+
+with open("/run/resolved_logicmonitor_scope.json") as f:
+    resolved = json.load(f)
+
+with open("/run/customer_context.json") as f:
+    ctx = json.load(f)
+
+# Correct: merge only resolved_scope.logicmonitor
+ctx["source_scope"]["logicmonitor"].update(resolved["resolved_scope"]["logicmonitor"])
+
+with open("/run/customer_context.json", "w") as f:
+    json.dump(ctx, f, indent=2)
+```
 
 ## Collection flow
 

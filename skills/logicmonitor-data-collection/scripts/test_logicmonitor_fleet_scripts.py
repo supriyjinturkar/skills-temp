@@ -167,25 +167,56 @@ def create_fetch_mock():
     fixture = tenant_fixtures()
 
     def fetch_impl(method, url, headers, body):
-        parsed = Path(urlparse(url).path)
-        path_value = str(parsed)
+        from urllib.parse import parse_qsl, urlparse  # local import for test isolation
+        path_value = urlparse(url).path
         query = dict(parse_qsl(urlparse(url).query))
+        filter_val = query.get("filter", "")
+
+        # --- Device groups ---
         if path_value.endswith("/device/groups"):
+            # BFS subgroup traversal: parentId filter
+            if "parentId:101" in filter_val:
+                return 200, {}, json.dumps({"items": [
+                    {"id": 103, "name": "Servers", "fullPath": "Nexon/Customer A/Servers", "numOfDirectDevices": 1},
+                    {"id": 104, "name": "Network", "fullPath": "Nexon/Customer A/Network", "numOfDirectDevices": 1},
+                ], "total": 2})
+            if "parentId:103" in filter_val or "parentId:104" in filter_val:
+                return 200, {}, json.dumps({"items": [], "total": 0})
+            # Targeted resolver filters
+            if 'name:"Customer A"' in filter_val or 'fullPath~"Customer A"' in filter_val or 'name~"Customer"' in filter_val:
+                return 200, {}, json.dumps({"items": [
+                    {"id": 101, "name": "Customer A", "fullPath": "Nexon/Customer A"},
+                ], "total": 1})
+            # Full tenant scan fallback
             return 200, {}, json.dumps(fixture["groups"])
+
+        # --- Bulk device fetch via hostGroupIds filter (new P3 path) ---
+        if path_value.endswith("/device/devices") and "hostGroupIds" in filter_val:
+            return 200, {}, json.dumps(fixture["devices"])
+
         if path_value.endswith("/device/groups/101/devices"):
             return 200, {}, json.dumps(fixture["devices"])
         if path_value.endswith("/device/groups/103/devices"):
             return 200, {}, json.dumps({"items": [], "total": 0})
         if path_value.endswith("/device/groups/104/devices"):
             return 200, {}, json.dumps({"items": [], "total": 0})
+
         if path_value.endswith("/device/groups/101/alerts"):
-            if "cleared:true" in query.get("filter", ""):
+            if "cleared:true" in filter_val:
                 return 200, {}, json.dumps({"items": [], "total": 0})
             return 200, {}, json.dumps(fixture["open_alerts"])
         if path_value.endswith("/device/groups/103/alerts") or path_value.endswith("/device/groups/104/alerts"):
             return 200, {}, json.dumps({"items": [], "total": 0})
+
+        # --- Website groups ---
         if path_value.endswith("/website/groups"):
             return 200, {}, json.dumps(fixture["website_groups"])
+        if path_value.endswith("/website/groups/201/groups"):
+            return 200, {}, json.dumps({"items": [], "total": 0})
+        if path_value.endswith("/website/groups/201/websites"):
+            return 200, {}, json.dumps(fixture["websites"])
+
+        # --- Infrastructure inventory ---
         if path_value.endswith("/device/unmonitoreddevices"):
             return 200, {}, json.dumps(fixture["unmonitored_devices"])
         if path_value.endswith("/setting/smcheckpoints"):
@@ -194,8 +225,8 @@ def create_fetch_mock():
             return 200, {}, json.dumps(fixture["collectors"])
         if path_value.endswith("/report/reports"):
             return 200, {}, json.dumps(fixture["reports"])
-        if path_value.endswith("/website/groups/201/websites"):
-            return 200, {}, json.dumps(fixture["websites"])
+
+        # --- Datasources, instances, and data ---
         if path_value.endswith("/device/devices/1/devicedatasources"):
             return 200, {}, json.dumps(fixture["devicedatasources"]["1"])
         if path_value.endswith("/device/devices/2/devicedatasources"):
@@ -240,6 +271,8 @@ def create_fetch_mock():
             return 200, {}, json.dumps(fixture["instance_data"]["2:2004:21004"])
         if path_value.endswith("/device/devices/2/devicedatasources/2005/instances/21005/data"):
             return 200, {}, json.dumps(fixture["instance_data"]["2:2005:21005"])
+
+        # --- Individual resource lookups ---
         if path_value.endswith("/device/groups/101"):
             return 200, {}, json.dumps({"id": 101, "name": "Customer A", "fullPath": "Nexon/Customer A"})
         if path_value.endswith("/device/groups/103"):
@@ -257,8 +290,6 @@ def create_fetch_mock():
         if path_value.endswith("/report/reports/7010"):
             return 200, {}, json.dumps(fixture["report_details"]["7010"])
         raise AssertionError(f"Unhandled URL {url}")
-
-    from urllib.parse import parse_qsl, urlparse  # local import for test isolation
 
     return fetch_impl
 
@@ -295,17 +326,20 @@ class LogicMonitorFleetScriptsTest(unittest.TestCase):
         result = run_logicmonitor_pipeline(context, fetch_impl=create_fetch_mock())
         self.assertEqual(result["snapshot"]["dataset"], "logicmonitor_snapshot")
         self.assertEqual(result["snapshot"]["inventory"]["devices"]["count_collected"], 2)
-        self.assertEqual(result["snapshot"]["inventory"]["collectors"]["count_collected"], 1)
-        self.assertEqual(result["snapshot"]["inventory"]["reports"]["count_collected"], 1)
+        self.assertEqual(result["snapshot"]["inventory"]["collectors"]["count_collected"], 0)
+        self.assertEqual(result["snapshot"]["inventory"]["reports"]["count_collected"], 0)
         self.assertEqual(result["observability"]["dataset"], "observability")
         self.assertEqual(result["observability"]["totals"]["devices"], 2)
         self.assertEqual(result["alert_trends"]["alert_counts_opened"], 1)
         self.assertEqual(result["alert_trends"]["alert_counts_closed"], 0)
         self.assertEqual(result["resource_health"]["critical_devices"], 1)
         self.assertEqual(result["monitoring_coverage"]["unmonitored_devices"], 1)
+        self.assertNotIn("collectors", result["monitoring_coverage"])
+        self.assertNotIn("checkpoints", result["monitoring_coverage"])
+        self.assertNotIn("reports_available", result["monitoring_coverage"])
         self.assertEqual(result["website_experience"]["monitored_websites"], 1)
-        self.assertEqual(result["platform_assets"]["collectors"]["count"], 1)
-        self.assertEqual(result["report_inventory"]["reports_available"], 1)
+        self.assertEqual(result["platform_assets"]["collectors"]["count"], 0)
+        self.assertEqual(result["report_inventory"]["reports_available"], 0)
         self.assertEqual(result["inventory_exceptions"]["unmonitored_device_count"], 1)
         self.assertEqual(result["device_availability"]["devices_monitored"], 2)
         self.assertEqual(result["cpu_memory_utilization"]["cpu_devices"][0]["device"], "cust-a-sql-01")
@@ -313,6 +347,11 @@ class LogicMonitorFleetScriptsTest(unittest.TestCase):
         self.assertEqual(result["network_interface_throughput"]["device_network_summary"][0]["device"], "cust-a-fw-01")
         self.assertEqual(result["bundle"]["dataset"], "logicmonitor_report_bundle")
         self.assertEqual(result["bundle"]["sections"]["source_inventory_summary"]["devices"], 2)
+        self.assertNotIn("collectors", result["bundle"]["sections"]["source_inventory_summary"])
+        self.assertNotIn("checkpoints", result["bundle"]["sections"]["source_inventory_summary"])
+        self.assertNotIn("reports", result["bundle"]["sections"]["source_inventory_summary"])
+        self.assertNotIn("platform_assets", result["bundle"]["sections"])
+        self.assertNotIn("report_inventory", result["bundle"]["sections"])
         self.assertIn("device_availability", result["bundle"]["sections"])
         self.assertIn("monitoring_coverage", result["bundle"]["sections"])
 
@@ -334,11 +373,20 @@ class LogicMonitorFleetScriptsTest(unittest.TestCase):
         self.assertEqual(resolution["match_confidence"], "high")
         self.assertEqual(resolution["resolved_scope"]["logicmonitor"]["root_device_group_id"], 101)
         self.assertEqual(resolution["resolved_scope"]["logicmonitor"]["root_website_group_id"], 201)
+        # Per SKILL.md: resolved_scope.logicmonitor.group_identifiers must contain only the
+        # single root full path. Descendant groups are available in
+        # device_group_resolution.descendant_groups for reference only and must NOT be
+        # merged into group_identifiers.
         self.assertEqual(
             resolution["resolved_scope"]["logicmonitor"]["group_identifiers"],
-            ["Nexon/Customer A", "Nexon/Customer A/Network", "Nexon/Customer A/Servers"],
+            ["Nexon/Customer A"],
         )
         self.assertEqual(resolution["resolved_scope"]["logicmonitor"]["site_groups"], ["Customer A"])
+        # Descendant groups are present in the resolution output for reference.
+        descendant_paths = sorted(
+            g["full_path"] for g in resolution["device_group_resolution"]["descendant_groups"]
+        )
+        self.assertIn("Nexon/Customer A", descendant_paths)
 
     def test_cli_steps_write_expected_files(self):
         context = resolve_logicmonitor_context(
@@ -382,9 +430,9 @@ class LogicMonitorFleetScriptsTest(unittest.TestCase):
 
     def test_run_path_layout(self):
         paths = resolve_run_paths("/tmp/customer-run")
-        self.assertEqual(paths["logicmonitor_snapshot_file"], "/tmp/customer-run/source_snapshots/logicmonitor.json")
-        self.assertEqual(paths["logicmonitor_bundle_file"], "/tmp/customer-run/normalized/logicmonitor_report_bundle.json")
-        self.assertEqual(paths["device_availability_file"], "/tmp/customer-run/normalized/device_availability.json")
+        self.assertTrue(Path(paths["logicmonitor_snapshot_file"]).as_posix().endswith("/tmp/customer-run/source_snapshots/logicmonitor.json"))
+        self.assertTrue(Path(paths["logicmonitor_bundle_file"]).as_posix().endswith("/tmp/customer-run/normalized/logicmonitor_report_bundle.json"))
+        self.assertTrue(Path(paths["device_availability_file"]).as_posix().endswith("/tmp/customer-run/normalized/device_availability.json"))
 
 
 if __name__ == "__main__":

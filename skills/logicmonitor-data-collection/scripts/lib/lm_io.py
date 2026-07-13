@@ -9,7 +9,23 @@ def ensure_dir(dir_path: str | Path) -> None:
 
 
 def read_json_file(file_path: str | Path):
-    return json.loads(Path(file_path).read_text(encoding="utf-8"))
+    # Fix #17: descriptive errors for missing files and invalid JSON.
+    path = Path(file_path)
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        raise FileNotFoundError(
+            f"Expected input file not found: {path}. "
+            "Check that the previous pipeline step completed successfully and wrote this file."
+        ) from None
+    except PermissionError as exc:
+        raise PermissionError(f"Cannot read file (permission denied): {path}") from exc
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise json.JSONDecodeError(
+            f"File is not valid JSON: {path} — {exc.msg}", exc.doc, exc.pos
+        ) from exc
 
 
 def write_json_file(file_path: str | Path, payload) -> None:

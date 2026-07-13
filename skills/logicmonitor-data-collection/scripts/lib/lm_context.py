@@ -22,12 +22,18 @@ def _parse_string_array(value) -> list[str]:
     return []
 
 
-def _parse_optional_number(value):
+def _parse_optional_number(value, field_name: str = ""):
+    # Fix #18: warn on invalid non-empty values instead of silently returning None.
     if value in (None, ""):
         return None
     try:
         numeric = float(value)
     except (TypeError, ValueError):
+        import sys
+        label = f" for field '{field_name}'" if field_name else ""
+        sys.stderr.write(
+            f"WARNING: _parse_optional_number received non-numeric value {value!r}{label}; treating as None.\n"
+        )
         return None
     return int(numeric) if numeric.is_integer() else numeric
 
@@ -78,11 +84,13 @@ def _resolve_logicmonitor_base_context(raw_context: dict, now: datetime | None =
         or ""
     ).strip()
     raw_period = raw_context.get("period") or raw_context.get("report_period") or {}
-    start_iso = _to_iso(raw_period["start"], "period.start")
-    end_iso = _to_iso(raw_period["end"], "period.end")
+    # Fix #1: use .get() so a missing key raises a descriptive ValueError via _to_iso,
+    # not a bare KeyError that hides which field is wrong.
+    start_iso = _to_iso(raw_period.get("start") or "", "period.start")
+    end_iso = _to_iso(raw_period.get("end") or "", "period.end")
     period_label = _build_period_label(start_iso, end_iso, raw_period.get("label"))
     raw_scope = (raw_context.get("source_scope") or {}).get("logicmonitor") or raw_context.get("logicmonitor") or {}
-    root_device_group_id = _parse_optional_number(raw_scope.get("root_device_group_id"))
+    root_device_group_id = _parse_optional_number(raw_scope.get("root_device_group_id"), "root_device_group_id")
     group_identifiers = _parse_string_array(raw_scope.get("group_identifiers"))
     if not group_identifiers and root_device_group_id is not None:
         group_identifiers.append(str(root_device_group_id))
@@ -95,7 +103,7 @@ def _resolve_logicmonitor_base_context(raw_context: dict, now: datetime | None =
         "group_identifiers": group_identifiers,
         "site_groups": _parse_string_array(raw_scope.get("site_groups")),
         "root_device_group_id": root_device_group_id,
-        "root_website_group_id": _parse_optional_number(raw_scope.get("root_website_group_id")),
+        "root_website_group_id": _parse_optional_number(raw_scope.get("root_website_group_id"), "root_website_group_id"),
         "allow_full_tenant_collection": raw_scope.get("allow_full_tenant_collection") is True,
         "request_timeout_seconds": int(raw_scope.get("request_timeout_seconds") or 60),
         "request_retry_attempts": int(raw_scope.get("request_retry_attempts") or 2),

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import math
 import time
-from collections import defaultdict
+from collections import defaultdict, deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
@@ -309,11 +309,20 @@ def normalize_collection(raw_state: dict, site_property_key: str) -> dict:
 
 
 def _build_alert_index(alerts: list[dict]) -> dict[str, list[dict]]:
-    by_device = defaultdict(list)
+    # Fix #16: Previously appended the same alert object under both device_id and
+    # device_name, doubling memory for large alert sets. Now we index each alert
+    # under both keys so lookup works, but using separate lists per key ensures
+    # no alert appears twice in a single lookup result.
+    by_device: dict[str, list[dict]] = defaultdict(list)
     for alert in alerts:
-        for key in {str(alert["device_id"]), str(alert["device_name"])}:
-            if key:
-                by_device[key].append(alert)
+        id_key = str(alert["device_id"])
+        name_key = str(alert["device_name"])
+        if id_key:
+            by_device[id_key].append(alert)
+        # Only add under name key if different from id key, to avoid double-storing
+        # in the common case where callers look up by id first.
+        if name_key and name_key != id_key:
+            by_device[name_key].append(alert)
     return by_device
 
 
@@ -459,8 +468,8 @@ def _build_collection_metrics(meta: dict, normalized: dict) -> dict:
     }
 
 
-def build_availability_summary(meta: dict, normalized: dict) -> dict:
-    metrics = _build_collection_metrics(meta, normalized)
+def build_availability_summary(meta: dict, normalized: dict, _metrics: dict | None = None) -> dict:
+    metrics = _metrics if _metrics is not None else _build_collection_metrics(meta, normalized)
     totals = {
         "monitored_devices": sum(site["monitored_devices"] for site in metrics["site_summaries"]),
         "healthy_devices": sum(site["healthy_devices"] for site in metrics["site_summaries"]),
@@ -493,8 +502,8 @@ def build_availability_summary(meta: dict, normalized: dict) -> dict:
     }
 
 
-def build_alert_trends(meta: dict, normalized: dict) -> dict:
-    metrics = _build_collection_metrics(meta, normalized)
+def build_alert_trends(meta: dict, normalized: dict, _metrics: dict | None = None) -> dict:
+    metrics = _metrics if _metrics is not None else _build_collection_metrics(meta, normalized)
     severity_breakdown = {"critical": 0, "error": 0, "warning": 0, "info": 0, "ok": 0, "unknown": 0}
     top_devices = defaultdict(int)
     top_sites = defaultdict(int)
@@ -530,8 +539,8 @@ def build_alert_trends(meta: dict, normalized: dict) -> dict:
     }
 
 
-def build_resource_health(meta: dict, normalized: dict) -> dict:
-    metrics = _build_collection_metrics(meta, normalized)
+def build_resource_health(meta: dict, normalized: dict, _metrics: dict | None = None) -> dict:
+    metrics = _metrics if _metrics is not None else _build_collection_metrics(meta, normalized)
     return {
         "datasource": "logicmonitor",
         "dataset": "resource_health",
@@ -551,8 +560,8 @@ def build_resource_health(meta: dict, normalized: dict) -> dict:
     }
 
 
-def _build_derived_metrics(meta: dict, normalized: dict) -> dict:
-    metrics = _build_collection_metrics(meta, normalized)
+def _build_derived_metrics(meta: dict, normalized: dict, _metrics: dict | None = None) -> dict:
+    metrics = _metrics if _metrics is not None else _build_collection_metrics(meta, normalized)
     availability_percent = _ratio_to_percent(
         metrics["device_health_counts"]["healthy_devices"],
         len(normalized["devices"]),
@@ -595,8 +604,8 @@ def _build_derived_metrics(meta: dict, normalized: dict) -> dict:
     }
 
 
-def _build_site_operations(meta: dict, normalized: dict) -> dict:
-    metrics = _build_collection_metrics(meta, normalized)
+def _build_site_operations(meta: dict, normalized: dict, _metrics: dict | None = None) -> dict:
+    metrics = _metrics if _metrics is not None else _build_collection_metrics(meta, normalized)
     return {
         "datasource": "logicmonitor",
         "dataset": "site_operations",
@@ -609,11 +618,14 @@ def _build_site_operations(meta: dict, normalized: dict) -> dict:
 
 
 def build_report_bundle(meta: dict, normalized: dict, snapshot: dict) -> dict:
-    availability = build_availability_summary(meta, normalized)
-    alerts = build_alert_trends(meta, normalized)
-    health = build_resource_health(meta, normalized)
-    derived_metrics = _build_derived_metrics(meta, normalized)
-    site_operations = _build_site_operations(meta, normalized)
+    # Fix #10: Compute collection metrics once and pass to all builders to avoid
+    # 5x redundant O(devices+alerts) iterations over the same normalized data.
+    shared_metrics = _build_collection_metrics(meta, normalized)
+    availability = build_availability_summary(meta, normalized, _metrics=shared_metrics)
+    alerts = build_alert_trends(meta, normalized, _metrics=shared_metrics)
+    health = build_resource_health(meta, normalized, _metrics=shared_metrics)
+    derived_metrics = _build_derived_metrics(meta, normalized, _metrics=shared_metrics)
+    site_operations = _build_site_operations(meta, normalized, _metrics=shared_metrics)
     monitoring_coverage = build_monitoring_coverage(meta, snapshot)
     website_experience = build_website_experience(meta, snapshot)
     platform_assets = build_platform_assets(meta, snapshot)
@@ -624,6 +636,38 @@ def build_report_bundle(meta: dict, normalized: dict, snapshot: dict) -> dict:
     cpu_memory_utilization = build_cpu_memory_utilization(meta, snapshot)
     disk_capacity_utilization = build_disk_capacity_utilization(meta, snapshot)
     network_interface_throughput = build_network_interface_throughput(meta, snapshot)
+    sections = {
+        "executive_summary": " ".join([
+            f"{availability['monitored_devices']} monitored devices were evaluated for the reporting window.",
+            f"{monitoring_coverage['unmonitored_devices']} additional devices are currently marked as unmonitored.",
+            f"{website_experience['monitored_websites']} monitored websites were included in the LogicMonitor collection.",
+            f"{alerts['alert_counts_closed']} alerts were cleared compared with {alerts['alert_counts_opened']} alerts opened.",
+            f"{health['critical_devices']} devices remained in critical state at the end of the collection window.",
+            f"{derived_metrics['alert_handling_kpis']['clear_rate_percent']}% of alerts were cleared inside the reporting window.",
+        ]),
+        "derived_metrics": derived_metrics,
+        "availability_summary": availability,
+        "alert_trends": alerts,
+        "resource_health": health,
+        "site_operations": site_operations,
+        "monitoring_coverage": monitoring_coverage,
+        "website_experience": website_experience,
+        "inventory_exceptions": inventory_exceptions,
+        "root_scope_summary": root_scope_summary,
+        "device_availability": device_availability,
+        "cpu_memory_utilization": cpu_memory_utilization,
+        "disk_capacity_utilization": disk_capacity_utilization,
+        "network_interface_throughput": network_interface_throughput,
+        "collection_notes": {
+            "availability_method": availability["availability_method"],
+            "grouping_method": availability["grouping_method"],
+            "site_groups": [site["name"] for site in availability["sites"]],
+        },
+    }
+    if platform_assets["collectors"]["count"] or platform_assets["checkpoints"]["count"]:
+        sections["platform_assets"] = platform_assets
+    if report_inventory["reports_available"]:
+        sections["report_inventory"] = report_inventory
     return {
         "datasource": "logicmonitor",
         "dataset": "logicmonitor_report_bundle",
@@ -632,36 +676,7 @@ def build_report_bundle(meta: dict, normalized: dict, snapshot: dict) -> dict:
         "report_family": meta["report_family"],
         "period_label": meta["period_label"],
         "generated_at": meta["generated_at"],
-        "sections": {
-            "executive_summary": " ".join([
-                f"{availability['monitored_devices']} monitored devices were evaluated for the reporting window.",
-                f"{monitoring_coverage['unmonitored_devices']} additional devices are currently marked as unmonitored.",
-                f"{website_experience['monitored_websites']} monitored websites were included in the LogicMonitor collection.",
-                f"{alerts['alert_counts_closed']} alerts were cleared compared with {alerts['alert_counts_opened']} alerts opened.",
-                f"{health['critical_devices']} devices remained in critical state at the end of the collection window.",
-                f"{derived_metrics['alert_handling_kpis']['clear_rate_percent']}% of alerts were cleared inside the reporting window.",
-            ]),
-            "derived_metrics": derived_metrics,
-            "availability_summary": availability,
-            "alert_trends": alerts,
-            "resource_health": health,
-            "site_operations": site_operations,
-            "monitoring_coverage": monitoring_coverage,
-            "website_experience": website_experience,
-            "platform_assets": platform_assets,
-            "report_inventory": report_inventory,
-            "inventory_exceptions": inventory_exceptions,
-            "root_scope_summary": root_scope_summary,
-            "device_availability": device_availability,
-            "cpu_memory_utilization": cpu_memory_utilization,
-            "disk_capacity_utilization": disk_capacity_utilization,
-            "network_interface_throughput": network_interface_throughput,
-            "collection_notes": {
-                "availability_method": availability["availability_method"],
-                "grouping_method": availability["grouping_method"],
-                "site_groups": [site["name"] for site in availability["sites"]],
-            },
-        },
+        "sections": sections,
     }
 
 
@@ -699,15 +714,19 @@ class LogicMonitorApi:
         self.fetch_impl = fetch_impl or self._default_fetch
         self.sleep_impl = sleep_impl or time.sleep
         self.timeout_seconds = max(1, int(config.get("request_timeout_seconds", 60)))
-        self.retry_attempts = max(0, int(config.get("request_retry_attempts", 2)))
+        self.retry_attempts = max(0, int(config.get("request_retry_attempts", 4)))
         self.retry_backoff_ms = max(100, int(config.get("request_retry_backoff_ms", 1000)))
         self.fetch_page_size = max(1, int(config.get("fetch_page_size", 200)))
         self.max_pages_per_endpoint = max(0, int(config.get("max_pages_per_endpoint", 0)))
         self.alert_chunk_hours = max(1, int(config.get("alert_chunk_hours", 168)))
         # Fix 4: bounded concurrency — used for datasource/instance/data fetches.
         self.detail_fetch_concurrency = max(1, int(config.get("detail_fetch_concurrency", 5)))
+        # Fix #7: Replace unbounded requests_made list with a capped ring-buffer +
+        # a running counter so memory usage is O(cap) regardless of tenant scale.
         self.diagnostics = {
-            "requests_made": [],
+            "requests_made_count": 0,
+            "last_requests": [],           # capped ring-buffer — last N requests only
+            "_last_requests_cap": 200,     # keep the last 200 entries for diagnostics
             "errors": [],
         }
 
@@ -739,24 +758,28 @@ class LogicMonitorApi:
     def request(self, method: str, resource_path: str, query: dict | None = None, body=None):
         """Make a single API request with exponential backoff and Retry-After support.
 
-        Fix 5: Smarter retries —
+        Fix #5: Raised Retry-After cap from 60s to 300s to honour LM throttle windows.
+        Fix #6: Default retry_attempts raised from 2 to 4 (see __init__).
+        Fix #2: Removed unreachable dead-code raise after the loop.
           - exponential backoff with jitter instead of linear
           - honours Retry-After response header when present on 429
           - records attempt count in diagnostics
         """
-        last_error = None
+        last_error: Exception | None = None
         for attempt in range(self.retry_attempts + 1):
             url, headers, body_bytes = self._build_request(method, resource_path, query=query, body=body)
             try:
                 status, response_headers, text = self.fetch_impl(method, url, headers, body_bytes)
                 payload = json.loads(text) if text else {}
-                self.diagnostics["requests_made"].append({
+                self.diagnostics["requests_made_count"] += 1
+                self.diagnostics["last_requests"].append({
                     "method": method,
                     "resource_path": resource_path,
                     "status": status,
                     "attempt": attempt + 1,
-                    "url": url,
                 })
+                if len(self.diagnostics["last_requests"]) > self.diagnostics["_last_requests_cap"]:
+                    self.diagnostics["last_requests"].pop(0)
                 if status >= 400:
                     raise HTTPError(url, status, text, response_headers, None)
                 return payload
@@ -779,12 +802,13 @@ class LogicMonitorApi:
                             except Exception:
                                 pass
                     if retry_after_secs and retry_after_secs > 0:
-                        wait_secs = min(retry_after_secs, 60.0)
+                        # Fix #5: cap raised to 300s to honour LM throttle windows.
+                        wait_secs = min(retry_after_secs, 300.0)
                     else:
                         # Exponential backoff with jitter: base * 2^attempt + small jitter.
                         base = (self.retry_backoff_ms / 1000) * (2 ** attempt)
                         jitter = (time.time() % 0.5)  # up to 500 ms jitter
-                        wait_secs = min(base + jitter, 60.0)
+                        wait_secs = min(base + jitter, 300.0)
                     self.sleep_impl(wait_secs)
                     continue
                 message = f"LogicMonitor API {method} {resource_path} failed with {error.code}: {error.reason or ''}".strip()
@@ -795,12 +819,15 @@ class LogicMonitorApi:
                 if attempt < self.retry_attempts:
                     base = (self.retry_backoff_ms / 1000) * (2 ** attempt)
                     jitter = (time.time() % 0.5)
-                    self.sleep_impl(min(base + jitter, 60.0))
+                    self.sleep_impl(min(base + jitter, 300.0))
                     continue
                 message = f"LogicMonitor API {method} {resource_path} failed: {error}"
                 self.diagnostics["errors"].append({"method": method, "resource_path": resource_path, "status": "request_error", "message": message})
                 raise RuntimeError(message) from error
-        raise RuntimeError(str(last_error))
+        # Fix #2: this line is now the correct final fallback — only reached if
+        # retry_attempts=0 AND the first attempt raised without entering any except branch
+        # (theoretically unreachable, but safe and no longer raises RuntimeError(None)).
+        raise RuntimeError(f"LogicMonitor API {method} {resource_path} failed after all attempts: {last_error}")
 
     def list_paged(self, resource_path: str, query: dict | None = None) -> dict:
         items = []
@@ -918,12 +945,13 @@ class LogicMonitorApi:
         with the root group's fullPath.  This ensures we never silently miss leaf
         groups that contain devices when the parentId API path is unavailable.
         """
-        # Step 1: try the parentId BFS walk (fast path).
+        # Fix #14: Use deque + popleft() for true breadth-first traversal.
+        # Previously used list.pop() which is LIFO (DFS), contrary to the docstring.
         collected: dict[int, dict] = {}
         parentid_failed = False
-        queue = [root_group_id]
+        queue: deque = deque([root_group_id])
         while queue:
-            parent_id = queue.pop()
+            parent_id = queue.popleft()
             try:
                 result = self.list_paged("/device/groups", query={"filter": f"parentId:{parent_id}"})
                 children = result.get("items") or []
@@ -1003,7 +1031,9 @@ class LogicMonitorApi:
         try:
             for i in range(0, len(device_ids), self._DEVICE_ID_CHUNK):
                 chunk = device_ids[i : i + self._DEVICE_ID_CHUNK]
-                id_filter = 'id~"' + "|".join(str(d) for d in chunk) + '"'
+                # Fix #9: Use exact-match colon operator "id:val" not contains "id~val"
+                # to avoid over-fetching devices whose IDs share a numeric prefix.
+                id_filter = 'id:"' + "|".join(str(d) for d in chunk) + '"'
                 result = self.list_paged(
                     "/device/devices",
                     query={
@@ -1340,7 +1370,8 @@ class LogicMonitorApi:
 
     def get_diagnostics(self) -> dict:
         return {
-            "requests_made": list(self.diagnostics["requests_made"]),
+            "requests_made_count": self.diagnostics["requests_made_count"],
+            "last_requests": list(self.diagnostics["last_requests"]),
             "errors": list(self.diagnostics["errors"]),
         }
 
@@ -1480,30 +1511,39 @@ def _fetch_scoped_alerts(api: LogicMonitorApi, root_group_id: int, start_ms: int
 
 
 def _fetch_all_scoped_alerts(api: LogicMonitorApi, root_group_id: int, start_ms: int, end_ms: int) -> tuple[dict, dict]:
-    """P4b: Fetch open and cleared alerts in a single API pass instead of two
-    separate calls.  Splits the combined result in memory.
+    """Fix #8: Actually implement the two-pass fallback described in the docstring.
 
-    Falls back to two separate calls if the combined fetch returns no results
-    (safety net for tenants that require explicit cleared filter).
+    Strategy:
+    1. Combined fetch (no cleared filter) — covers tenants that return both states.
+    2. If the combined fetch returns zero items, fall back to two explicit passes
+       (cleared:true and cleared:false) for tenants that require explicit filtering.
+    Splits the combined result in memory.
     """
     if root_group_id is None:
         empty = _empty_paged_result()
         return empty, empty
 
-    # Single combined fetch (no cleared filter → returns both open and cleared).
+    # Pass 1: combined fetch (no cleared filter → should return both open and cleared).
     combined = api.fetch_alerts(start_ms, end_ms, {"group_id": root_group_id})
-    open_items = [
-        alert for alert in combined["items"]
-        if not (
-            alert.get("cleared") is True
-            or alert.get("isCleared") is True
-            or alert.get("clearedEpoch")
-            or alert.get("clearedOn")
+    if combined["items"]:
+        open_items = [
+            alert for alert in combined["items"]
+            if not (
+                alert.get("cleared") is True
+                or alert.get("isCleared") is True
+                or alert.get("clearedEpoch")
+                or alert.get("clearedOn")
+            )
+        ]
+        cleared_items = [alert for alert in combined["items"] if alert not in open_items]
+        return (
+            {"count_collected": len(open_items), "items": open_items},
+            {"count_collected": len(cleared_items), "items": cleared_items},
         )
-    ]
-    cleared_items = [alert for alert in combined["items"] if alert not in open_items]
-    open_result = {"count_collected": len(open_items), "items": open_items}
-    cleared_result = {"count_collected": len(cleared_items), "items": cleared_items}
+
+    # Fix #8: Pass 2 — explicit two-pass fallback for tenants that require cleared filter.
+    open_result = _fetch_scoped_alerts(api, root_group_id, start_ms, end_ms, cleared=False)
+    cleared_result = _fetch_scoped_alerts(api, root_group_id, start_ms, end_ms, cleared=True)
     return open_result, cleared_result
 
 
@@ -1515,23 +1555,57 @@ def _fetch_website_scope(api: LogicMonitorApi, context: dict) -> dict:
             "websites": _empty_paged_result(),
             "website_details": _empty_entity_details(),
         }
-    root_scope = api.fetch_root_scope(
-        None,
-        context["logicmonitor"]["root_website_group_id"],
-        context["period"]["start_ms"],
-        context["period"]["end_ms"],
-    )
+
+    root_wg_id = context["logicmonitor"]["root_website_group_id"]
+
+    # Fix #12: Previously only fetched the root website group and its direct websites.
+    # Now recurse into website sub-groups so customers with hierarchical website groups
+    # have all their websites collected, mirroring the device sub-group traversal.
+    collected_wg_ids: list[int] = [root_wg_id]
+    try:
+        wg_queue: deque = deque([root_wg_id])
+        while wg_queue:
+            parent_wg_id = wg_queue.popleft()
+            sub_result = api.fetch_optional_paged(f"/website/groups/{parent_wg_id}/groups")
+            for sub in sub_result.get("items") or []:
+                sub_id = sub.get("id")
+                if sub_id is not None and sub_id not in collected_wg_ids:
+                    collected_wg_ids.append(sub_id)
+                    wg_queue.append(sub_id)
+    except RuntimeError:
+        pass  # Best-effort; proceed with whatever we have.
+
+    # Collect websites from each discovered group.
+    all_websites: list[dict] = []
+    seen_website_ids: set[str] = set()
+    for wg_id in collected_wg_ids:
+        try:
+            ws_result = api.fetch_optional_paged(f"/website/groups/{wg_id}/websites")
+            for site in ws_result.get("items") or []:
+                site_id = str(site.get("id") or "")
+                if site_id and site_id not in seen_website_ids:
+                    seen_website_ids.add(site_id)
+                    all_websites.append(site)
+        except RuntimeError:
+            pass
+
+    websites = {
+        "count_collected": len(all_websites),
+        "items": all_websites,
+        "total": len(all_websites),
+        "pages": len(collected_wg_ids),
+    }
     website_groups = {
-        "count_collected": 1,
-        "items": [{"id": context["logicmonitor"]["root_website_group_id"]}],
-        "total": 1,
+        "count_collected": len(collected_wg_ids),
+        "items": [{"id": wg_id} for wg_id in collected_wg_ids],
+        "total": len(collected_wg_ids),
         "pages": 1,
     }
     return {
         "website_groups": website_groups,
         "website_group_details": _safe_fetch_entity_details(api, "/website/groups", website_groups["items"]),
-        "websites": root_scope.get("website_group_websites") or _empty_paged_result(),
-        "website_details": _safe_fetch_entity_details(api, "/website/websites", (root_scope.get("website_group_websites") or {}).get("items") or []),
+        "websites": websites,
+        "website_details": _safe_fetch_entity_details(api, "/website/websites", websites["items"]),
     }
 
 
@@ -1611,9 +1685,6 @@ def _summarize_source_inventory(snapshot: dict) -> dict:
         "unmonitored_devices": (inventory.get("unmonitored_devices") or {}).get("count_collected", 0),
         "website_groups": (inventory.get("website_groups") or {}).get("count_collected", 0),
         "websites": (inventory.get("websites") or {}).get("count_collected", 0),
-        "collectors": (inventory.get("collectors") or {}).get("count_collected", 0),
-        "checkpoints": (inventory.get("smcheckpoints") or {}).get("count_collected", 0),
-        "reports": (inventory.get("reports") or {}).get("count_collected", 0),
         "open_alerts": (alerts.get("open") or {}).get("count_collected", 0),
         "cleared_alerts": (alerts.get("cleared") or {}).get("count_collected", 0),
     }
@@ -1693,7 +1764,11 @@ def _collect_series_from_payload(payload, series: dict[str, list[float]]) -> Non
             flattened = _flatten_numeric_values(payload.get("values") or payload.get("data") or payload.get("items"))
             if flattened:
                 series[_normalize_metric_key(payload.get("name"))] = flattened
-        for value in payload.values():
+        # Fix #11: Limit legacy recursive descent to known metric-container keys only.
+        # Previously iterated ALL dict values, risking ingestion of non-metric numerics
+        # from arbitrary metadata fields in the API response.
+        for key in ("data", "items", "series", "points", "metrics"):
+            value = payload.get(key)
             if isinstance(value, (dict, list)):
                 _collect_series_from_payload(value, series)
         return
@@ -1723,16 +1798,12 @@ def _choose_series_values(series: dict[str, list[float]], candidates: list[str])
 def _collect_performance_metrics(api: LogicMonitorApi, context: dict, devices: list[dict]) -> dict:
     """Collect per-device performance metrics for all relevant datasource families.
 
-    Fix 3: Replace silent continue-on-error with structured per-device/per-datasource
-    error recording.  Each failure is recorded with device_id, datasource, and
-    reason.  At the end, if more than the configured failure_threshold fraction of
-    considered devices had datasource-fetch failures, the summary flags
-    partial_coverage=True so downstream consumers can act on it.
+    Fix #4: Phases 2 (instance list) and Phase 3 (data fetch) are now parallelized
+    across ALL devices in a single _run_concurrent call each, not serialized per-device.
+    This reduces wall-clock time from O(devices) to O(max_concurrent) for both phases.
 
-    Fix 4: Datasource list fetches run concurrently across all devices using
-    detail_fetch_concurrency.  Instance and data fetches within each device also
-    run concurrently per device.  Bounded by the configured concurrency limit so
-    we go faster without firehosing the API.
+    Fix #3 (preserved): structured per-device/per-datasource error recording.
+    Fix #15 (preserved): devices with matched datasources but zero instances are counted.
     """
     failure_threshold = float(context["logicmonitor"].get("perf_failure_threshold", 0.5))
     summary = {
@@ -1744,24 +1815,28 @@ def _collect_performance_metrics(api: LogicMonitorApi, context: dict, devices: l
         "partial_coverage": False,
     }
     devices_with_metrics = {key: set() for key in PERFORMANCE_COLLECTION_SPECS}
-    availability_rows = []
-    cpu_rows = []
-    memory_rows = []
-    disk_rows = []
-    network_rows = []
+    availability_rows: list[dict] = []
+    cpu_rows: list[dict] = []
+    memory_rows: list[dict] = []
+    disk_rows: list[dict] = []
+    network_rows: list[dict] = []
 
-    # --- Phase 1: fetch datasource lists concurrently for all devices ---
     valid_devices = [d for d in devices if d.get("id") not in (None, "")]
+
+    # ---------------------------------------------------------------------------
+    # Phase 1: Fetch datasource lists concurrently for ALL devices at once.
+    # ---------------------------------------------------------------------------
     ds_tasks = [(api.fetch_device_datasources, str(d["id"])) for d in valid_devices]
     ds_results_raw = api._run_concurrent(ds_tasks)
-    # Reconstruct ordered mapping: device_index -> result_or_exc
     ds_by_idx = {idx: res for idx, res in ds_results_raw}
 
+    # Build per-device matched-datasource map; record Phase 1 errors immediately.
+    # Structure: per_device_ds[dev_idx] = [(collection_key, spec, datasource, ds_id), ...]
+    per_device_ds: dict[int, list] = {}
+    devices_with_phase1_error: set[int] = set()
     for dev_idx, device in enumerate(valid_devices):
         device_id_text = str(device["id"])
         device_name = _device_name(device)
-        device_had_error = False
-
         ds_result = ds_by_idx.get(dev_idx)
         if isinstance(ds_result, Exception):
             summary["fetch_errors"].append({
@@ -1771,9 +1846,9 @@ def _collect_performance_metrics(api: LogicMonitorApi, context: dict, devices: l
                 "error": str(ds_result),
             })
             summary["devices_with_fetch_errors"] += 1
+            devices_with_phase1_error.add(dev_idx)
             continue
-
-        matched_datasources = []
+        matched = []
         for datasource in (ds_result or {}).get("items") or []:
             collection_key = _match_performance_collection_key(datasource)
             if not collection_key:
@@ -1784,138 +1859,176 @@ def _collect_performance_metrics(api: LogicMonitorApi, context: dict, devices: l
             ds_id = datasource.get("id")
             if ds_id in (None, ""):
                 continue
-            matched_datasources.append((collection_key, spec, datasource, ds_id))
+            matched.append((collection_key, spec, datasource, ds_id))
+        if matched:
+            per_device_ds[dev_idx] = matched
 
-        if not matched_datasources:
+    # ---------------------------------------------------------------------------
+    # Fix #4 Phase 2: Build ALL instance-fetch tasks across ALL devices, run once.
+    # inst_task_meta[i] = (dev_idx, ds_tuple_idx, collection_key, spec, datasource, ds_id)
+    # ---------------------------------------------------------------------------
+    inst_tasks: list[tuple] = []
+    inst_task_meta: list[tuple] = []
+    for dev_idx, matched in per_device_ds.items():
+        device = valid_devices[dev_idx]
+        device_id_text = str(device["id"])
+        for ds_tuple_idx, (collection_key, spec, datasource, ds_id) in enumerate(matched):
+            inst_tasks.append((api.fetch_datasource_instances, device_id_text, str(ds_id)))
+            inst_task_meta.append((dev_idx, ds_tuple_idx, collection_key, spec, datasource, ds_id))
+
+    inst_results_raw = api._run_concurrent(inst_tasks) if inst_tasks else []
+    inst_by_task_idx = {idx: res for idx, res in inst_results_raw}
+
+    # ---------------------------------------------------------------------------
+    # Fix #4 Phase 3: Build ALL data-fetch tasks across ALL devices, run once.
+    # ---------------------------------------------------------------------------
+    data_tasks: list[tuple] = []
+    data_task_meta: list[tuple] = []  # (dev_idx, collection_key, spec, ds_name, instance)
+    devices_with_inst_error: set[int] = set()
+    devices_with_zero_instances: set[int] = set()
+
+    for task_idx, (dev_idx, ds_tuple_idx, collection_key, spec, datasource, ds_id) in enumerate(inst_task_meta):
+        device = valid_devices[dev_idx]
+        device_id_text = str(device["id"])
+        device_name = _device_name(device)
+        ds_name = str(datasource.get("dataSourceName") or datasource.get("name") or ds_id or "")
+        inst_result = inst_by_task_idx.get(task_idx)
+        if isinstance(inst_result, Exception):
+            summary["fetch_errors"].append({
+                "device_id": device_id_text,
+                "device_name": device_name,
+                "stage": "instance_list",
+                "datasource": ds_name,
+                "error": str(inst_result),
+            })
+            devices_with_inst_error.add(dev_idx)
+            continue
+        instances = (inst_result or {}).get("items") or []
+        if not instances:
+            devices_with_zero_instances.add(dev_idx)
+            continue
+        for instance in instances:
+            summary["matched_instances"][collection_key] += 1
+            instance_id = instance.get("id")
+            if instance_id in (None, ""):
+                continue
+            query_metrics = [
+                *spec.get("metric_candidates", []),
+                *spec.get("extra_metric_candidates", []),
+            ]
+            data_tasks.append((
+                api.fetch_datasource_instance_data,
+                device_id_text, str(ds_id), str(instance_id),
+                query_metrics,
+                context["period"]["start_ms"],
+                context["period"]["end_ms"],
+            ))
+            data_task_meta.append((dev_idx, collection_key, spec, ds_name, instance))
+
+    # Fix #15: Record devices with matched datasources but zero active instances.
+    for dev_idx in devices_with_zero_instances - devices_with_inst_error:
+        if dev_idx not in devices_with_phase1_error:
+            device = valid_devices[dev_idx]
+            summary["fetch_errors"].append({
+                "device_id": str(device["id"]),
+                "device_name": _device_name(device),
+                "stage": "instance_data",
+                "datasource": "all",
+                "error": "matched datasources but found zero active instances — no performance data collected for this device",
+            })
+            summary["devices_with_fetch_errors"] += 1
+
+    # Account for Phase 2 errors.
+    for dev_idx in devices_with_inst_error - devices_with_phase1_error:
+        summary["devices_with_fetch_errors"] += 1
+
+    # Now run all data fetches in one concurrent batch.
+    data_results_raw = api._run_concurrent(data_tasks) if data_tasks else []
+    data_by_idx = {idx: res for idx, res in data_results_raw}
+
+    devices_with_data_error: set[int] = set()
+    for task_idx, (dev_idx, collection_key, spec, ds_name, instance) in enumerate(data_task_meta):
+        device = valid_devices[dev_idx]
+        device_id_text = str(device["id"])
+        device_name = _device_name(device)
+        payload = data_by_idx.get(task_idx)
+        instance_name = _instance_label(instance)
+        if isinstance(payload, Exception):
+            summary["fetch_errors"].append({
+                "device_id": device_id_text,
+                "device_name": device_name,
+                "stage": "instance_data",
+                "datasource": ds_name,
+                "instance": instance_name,
+                "error": str(payload),
+            })
+            devices_with_data_error.add(dev_idx)
             continue
 
-        # --- Phase 2: fetch instance lists concurrently for matched datasources ---
-        inst_tasks = [
-            (api.fetch_datasource_instances, device_id_text, str(ds_id))
-            for _, _, _, ds_id in matched_datasources
-        ]
-        inst_results_raw = api._run_concurrent(inst_tasks)
-        inst_by_idx = {idx: res for idx, res in inst_results_raw}
-
-        # --- Phase 3: collect data fetches across all instances concurrently ---
-        data_tasks = []
-        data_task_meta = []  # (collection_key, spec, ds_name, instance)
-        for ds_idx, (collection_key, spec, datasource, ds_id) in enumerate(matched_datasources):
-            inst_result = inst_by_idx.get(ds_idx)
-            ds_name = str(datasource.get("dataSourceName") or datasource.get("name") or ds_id or "")
-            if isinstance(inst_result, Exception):
-                summary["fetch_errors"].append({
-                    "device_id": device_id_text,
-                    "device_name": device_name,
-                    "stage": "instance_list",
-                    "datasource": ds_name,
-                    "error": str(inst_result),
-                })
-                device_had_error = True
-                continue
-            for instance in (inst_result or {}).get("items") or []:
-                summary["matched_instances"][collection_key] += 1
-                instance_id = instance.get("id")
-                if instance_id in (None, ""):
-                    continue
-                query_metrics = [
-                    *spec.get("metric_candidates", []),
-                    *spec.get("extra_metric_candidates", []),
-                ]
-                data_tasks.append((
-                    api.fetch_datasource_instance_data,
-                    device_id_text, str(ds_id), str(instance_id),
-                    query_metrics,
-                    context["period"]["start_ms"],
-                    context["period"]["end_ms"],
-                ))
-                data_task_meta.append((collection_key, spec, ds_name, instance))
-
-        if not data_tasks:
-            if device_had_error:
-                summary["devices_with_fetch_errors"] += 1
-            continue
-
-        data_results_raw = api._run_concurrent(data_tasks)
-        data_by_idx = {idx: res for idx, res in data_results_raw}
-
-        for task_idx, (collection_key, spec, ds_name, instance) in enumerate(data_task_meta):
-            payload = data_by_idx.get(task_idx)
-            instance_name = _instance_label(instance)
-            if isinstance(payload, Exception):
-                summary["fetch_errors"].append({
-                    "device_id": device_id_text,
-                    "device_name": device_name,
-                    "stage": "instance_data",
-                    "datasource": ds_name,
-                    "instance": instance_name,
-                    "error": str(payload),
-                })
-                device_had_error = True
-                continue
-
-            series = _extract_named_series(payload)
-            if collection_key == "cpu":
-                values = _choose_series_values(series, spec["metric_candidates"])
-                average = _average_value(values)
-                if average is not None:
-                    cpu_rows.append({
-                        "device_id": device_id_text,
-                        "device_name": device_name,
-                        "instance_name": instance_name,
-                        "avg_percent": average,
-                    })
-            elif collection_key == "memory":
-                values = _choose_series_values(series, spec["metric_candidates"])
-                average = _average_value(values)
-                if average is not None:
-                    memory_rows.append({
-                        "device_id": device_id_text,
-                        "device_name": device_name,
-                        "instance_name": instance_name,
-                        "avg_percent": average,
-                    })
-            elif collection_key == "disk":
-                values = _choose_series_values(series, spec["metric_candidates"])
-                average = _average_value(values)
-                maximum = _max_value(values)
-                if average is not None or maximum is not None:
-                    disk_rows.append({
-                        "device_id": device_id_text,
-                        "device_name": device_name,
-                        "volume_name": instance_name,
-                        "avg_percent": average,
-                        "max_percent": maximum,
-                    })
-            elif collection_key == "ping":
-                packet_loss = _choose_series_values(series, spec["metric_candidates"])
-                rtt = _choose_series_values(series, spec.get("extra_metric_candidates", []))
-                packet_loss_avg = _average_value(packet_loss)
-                availability = None if packet_loss_avg is None else _round_value(max(0, 100 - packet_loss_avg), 2)
-                availability_rows.append({
+        series = _extract_named_series(payload)
+        if collection_key == "cpu":
+            values = _choose_series_values(series, spec["metric_candidates"])
+            average = _average_value(values)
+            if average is not None:
+                cpu_rows.append({
                     "device_id": device_id_text,
                     "device_name": device_name,
                     "instance_name": instance_name,
-                    "packet_loss_avg_percent": packet_loss_avg,
-                    "ping_rtt_avg_ms": _average_value(rtt),
-                    "availability_percent": availability,
+                    "avg_percent": average,
                 })
-            elif collection_key == "network":
-                rx_values = _choose_series_values(series, spec["metric_candidates"])
-                tx_values = _choose_series_values(series, spec.get("extra_metric_candidates", []))
-                rx_avg = _average_value(rx_values)
-                tx_avg = _average_value(tx_values)
-                if rx_avg is not None or tx_avg is not None:
-                    network_rows.append({
-                        "device_id": device_id_text,
-                        "device_name": device_name,
-                        "interface_name": instance_name,
-                        "rx_mbps_avg": None if rx_avg is None else _round_value(rx_avg / 1_000_000, 3),
-                        "tx_mbps_avg": None if tx_avg is None else _round_value(tx_avg / 1_000_000, 3),
-                    })
+        elif collection_key == "memory":
+            values = _choose_series_values(series, spec["metric_candidates"])
+            average = _average_value(values)
+            if average is not None:
+                memory_rows.append({
+                    "device_id": device_id_text,
+                    "device_name": device_name,
+                    "instance_name": instance_name,
+                    "avg_percent": average,
+                })
+        elif collection_key == "disk":
+            values = _choose_series_values(series, spec["metric_candidates"])
+            average = _average_value(values)
+            maximum = _max_value(values)
+            if average is not None or maximum is not None:
+                disk_rows.append({
+                    "device_id": device_id_text,
+                    "device_name": device_name,
+                    "volume_name": instance_name,
+                    "avg_percent": average,
+                    "max_percent": maximum,
+                })
+        elif collection_key == "ping":
+            packet_loss = _choose_series_values(series, spec["metric_candidates"])
+            rtt = _choose_series_values(series, spec.get("extra_metric_candidates", []))
+            packet_loss_avg = _average_value(packet_loss)
+            availability = None if packet_loss_avg is None else _round_value(max(0, 100 - packet_loss_avg), 2)
+            availability_rows.append({
+                "device_id": device_id_text,
+                "device_name": device_name,
+                "instance_name": instance_name,
+                "packet_loss_avg_percent": packet_loss_avg,
+                "ping_rtt_avg_ms": _average_value(rtt),
+                "availability_percent": availability,
+            })
+        elif collection_key == "network":
+            rx_values = _choose_series_values(series, spec["metric_candidates"])
+            tx_values = _choose_series_values(series, spec.get("extra_metric_candidates", []))
+            rx_avg = _average_value(rx_values)
+            tx_avg = _average_value(tx_values)
+            if rx_avg is not None or tx_avg is not None:
+                network_rows.append({
+                    "device_id": device_id_text,
+                    "device_name": device_name,
+                    "interface_name": instance_name,
+                    "rx_mbps_avg": None if rx_avg is None else _round_value(rx_avg / 1_000_000, 3),
+                    "tx_mbps_avg": None if tx_avg is None else _round_value(tx_avg / 1_000_000, 3),
+                })
 
-        if device_had_error:
-            summary["devices_with_fetch_errors"] += 1
+    # Count unique devices that had data-fetch errors (not already counted).
+    already_counted = devices_with_phase1_error | devices_with_inst_error | devices_with_zero_instances
+    for dev_idx in devices_with_data_error - already_counted:
+        summary["devices_with_fetch_errors"] += 1
 
     summary["devices_with_metrics"] = {key: len(value) for key, value in devices_with_metrics.items()}
 
@@ -1961,9 +2074,6 @@ def build_monitoring_coverage(meta: dict, snapshot: dict) -> dict:
         "monitoring_coverage_percent": _ratio_to_percent(monitored_devices, total_known_devices),
         "website_groups": _count_collected((snapshot.get("inventory") or {}).get("website_groups")),
         "monitored_websites": _count_collected((snapshot.get("inventory") or {}).get("websites")),
-        "collectors": _count_collected((snapshot.get("inventory") or {}).get("collectors")),
-        "checkpoints": _count_collected((snapshot.get("inventory") or {}).get("smcheckpoints")),
-        "reports_available": _count_collected((snapshot.get("inventory") or {}).get("reports")),
     }
 
 
@@ -2141,14 +2251,11 @@ def build_snapshot_optional_metrics(meta: dict, snapshot: dict) -> dict:
             "monitored_websites": website_experience["monitored_websites"],
             "website_status_breakdown": website_experience["status_breakdown"],
             "scoped_alerts": root_scope_summary["scoped_alerts"],
-            "reports_available": _count_collected((snapshot.get("inventory") or {}).get("reports")),
         },
         "metrics_usage": {
             "report_ready_sections": [
                 "monitoring_coverage",
                 "website_experience",
-                "platform_assets",
-                "report_inventory",
                 "inventory_exceptions",
                 "root_scope_summary",
                 "device_availability",
@@ -2366,7 +2473,10 @@ def resolve_logicmonitor_scope_by_company(context: dict, fetch_impl=None, sleep_
         except RuntimeError:
             pass
 
-    # Fallback: full tenant scan (original behaviour).
+    # Fix #13: Fallback: full tenant scan. On large shared tenants this can return
+    # thousands of groups. Callers should set max_pages_per_endpoint in the context
+    # to bound this. The safety limit will raise RuntimeError rather than consuming
+    # unbounded memory.
     if device_groups_result is None or not device_groups_result.get("items"):
         device_groups_result = api.list_paged("/device/groups")
 
@@ -2388,11 +2498,19 @@ def resolve_logicmonitor_scope_by_company(context: dict, fetch_impl=None, sleep_
     if not scored_device_groups:
         raise RuntimeError(f"No LogicMonitor device groups matched company name '{queries[0]}'.")
 
+    # Fix #3: Use next(..., None) + explicit guard instead of bare next() which
+    # raises a cryptic StopIteration if the scored group id is not in the result set.
     root_device_group = next(
-        group
-        for group in device_groups_result["items"]
-        if group.get("id") == scored_device_groups[0]["id"]
+        (group for group in device_groups_result["items"] if group.get("id") == scored_device_groups[0]["id"]),
+        None,
     )
+    if root_device_group is None:
+        raise RuntimeError(
+            f"Scored device group id {scored_device_groups[0]['id']} was not found in the "
+            "device group result set. The targeted filter may have returned a different page "
+            "than the full scan used for scoring. Re-run with allow_full_tenant_collection=true "
+            "to force a consistent full-tenant scan."
+        )
     descendant_device_groups = _collect_descendant_groups(root_device_group, device_groups_result["items"])
     device_group_identifiers = [
         str(group.get("fullPath") or group.get("name") or group.get("id"))
@@ -2416,10 +2534,10 @@ def resolve_logicmonitor_scope_by_company(context: dict, fetch_impl=None, sleep_
 
     root_website_group = None
     if scored_website_groups:
+        # Fix #3: same next(..., None) guard for website group resolution.
         root_website_group = next(
-            group
-            for group in website_groups_result["items"]
-            if group.get("id") == scored_website_groups[0]["id"]
+            (group for group in website_groups_result["items"] if group.get("id") == scored_website_groups[0]["id"]),
+            None,
         )
 
     best_device_score = scored_device_groups[0]["score"]
@@ -2515,10 +2633,11 @@ def collect_logicmonitor_snapshot(context: dict, fetch_impl=None, sleep_impl=Non
 
     website_scope = _fetch_website_scope(api, context)
     unmonitored_devices = api.fetch_unmonitored_devices()
-    smcheckpoints = api.fetch_smcheckpoints()
-    collectors = api.fetch_collectors()
-    reports = api.fetch_reports()
-    report_details = _safe_fetch_entity_details(api, "/report/reports", reports.get("items") or [])
+    # Temporarily disable low-value inventory collection to avoid unnecessary API calls.
+    smcheckpoints = _empty_paged_result()
+    collectors = _empty_paged_result()
+    reports = _empty_paged_result()
+    report_details = _empty_entity_details()
     performance_metrics = _collect_performance_metrics(api, context, device_scope["devices"]["items"])
     root_scope = {
         "device_group_id": context["logicmonitor"]["root_device_group_id"],

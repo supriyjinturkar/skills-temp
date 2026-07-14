@@ -14,17 +14,12 @@ The official logo is a **white wordmark on a black background** PNG. It lives at
 /skills/nexon-brand/assets/nexon-logo-black-bg.png
 ```
 
-For HTML, use this prebuilt data URI directly as the `img src` value:
-```
-/skills/nexon-brand/assets/logo-base64-data-uri.txt
-```
-
 **Rules (strict):**
 - Place the logo on every page/slide — no exceptions.
 - Never recreate, type, or approximate the wordmark. Never stretch, rotate, or add effects.
 - Minimum size: 100px wide. Clear space = height of the "x" on all sides.
 - Never place on secondary palette colours (Bluetooth blue, Encrypt red, Gateway yellow, Wildcard green).
-- HTML: use `/skills/nexon-brand/assets/logo-base64-data-uri.txt` directly as the `img src` value in the fixed black header, and repeat it at `opacity: 0.35` in the footer.
+- HTML: embed as a Base64 data URI in the fixed black header, and repeat at `opacity: 0.35` in the footer.
 - PPTX: top-left corner of every slide.
 - DOCX: left-aligned in the page header above a thin black rule.
 
@@ -77,7 +72,7 @@ For HTML, use this prebuilt data URI directly as the `img src` value:
 
 1. Import Inter from Google Fonts.
 2. Set CSS custom properties from the palette.
-3. Fixed black header (64px) with logo left-aligned, using the exact data URI from `assets/logo-base64-data-uri.txt`.
+3. Fixed black header (64px) with logo left-aligned, embedded as Base64 data URI.
 4. Body background: `var(--nexon-satellite)`.
 5. Footer: logo at `opacity: 0.35`, black background.
 

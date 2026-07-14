@@ -18,28 +18,32 @@ Treat this skill as guidance, not a rigid template. Use it to shape good decisio
 
 ## How to use this skill
 
-- Generate the report based on the user request, source data, and context.
+- Do not start rendering HTML until the Data Signal Report and Report Blueprint exist. Read `nexon-combined-monthly-report/references/data-interrogation-and-blueprint.md` for how to produce them.
+- Generate the report based on the user request, source data, and the Report Blueprint.
 - Use this skill as a set of guidelines and patterns, not as a mandatory sequence.
 - Borrow the parts that help: report family selection, section rhythm, chart and table choices, source and caveat wording, and QA heuristics.
 - Skip or adapt any pattern that does not fit the report.
 
 ## Suggested flow
 
-1. Define the report job before writing.
+1. Confirm the Data Signal Report (`run/data_signal_report.json`) exists and all sources are assessed.
+2. Confirm the Report Blueprint (`run/report_blueprint.json`) exists with all sections, exclusions, and lead messages.
+3. Define the report job before writing HTML.
    Clarify the audience, the report type, and the main takeaway the page should leave behind.
-2. Choose the report family.
+4. Choose the report family.
    A monthly service review usually fits period-bound service desk, infrastructure, backup, action, and data-scope reporting. A service intelligence or strategy report usually fits cross-period themes, recurring causes, automation opportunities, and multi-quarter recommendations.
-3. Build the shell before filling details.
+5. Build the shell before filling details.
    Start with the broad structure, navigation, and component system so the page has a deliberate visual rhythm.
    If the report uses tabs, make them real in-page section controls that reveal the active panel on click. Do not implement tabs as plain anchor links to sections that are all rendered in one long scroll.
-4. Write evidence-led sections.
+6. For each section in the blueprint, read the named individual section files and render the section using the specified `visual_type` and `lead_message`.
+7. Write evidence-led sections.
    Let each section answer a real question and pair charts or metric groups with short interpretation.
-5. Be explicit about data scope and caveats.
+8. Be explicit about data scope and caveats.
    Prefer exact reporting windows, named source systems, and direct disclosure of missing or partial coverage.
-6. Finish with actions, owners, or next checks.
+9. Finish with actions, owners, or next checks.
    When the report supports it, translate risk or opportunity into concrete follow-up.
-7. Perform a final HTML QA pass.
-   Check narrative, dates, accessibility, responsiveness, consistency, and offline robustness.
+10. Perform a final HTML QA pass.
+    Check narrative, dates, accessibility, responsiveness, consistency, and offline robustness.
 
 Use this flow when it helps, but do not force the report into it if a better shape emerges from the content.
 
@@ -54,6 +58,8 @@ Use this flow when it helps, but do not force the report into it if a better sha
 - Keep tables readable without zooming.
 - Keep copy factual and calm, especially in risk sections.
 - Never hide uncertainty. If a trend is unavailable, say so. If a reporting window spans multiple months, say so. If a metric covers only a subset of devices or tickets, say so.
+- Every section in the HTML must trace back to a blueprint section. Do not add sections that are not in the blueprint without updating the blueprint first.
+- Every chart in the report must use the `visual_type` specified in the blueprint for that section, or must have a documented reason for the change.
 
 These are guardrails, not a narrow spec. The report should still feel authored, context-aware, and purpose-built.
 
@@ -76,3 +82,4 @@ A strong HTML report should be:
 - traceable back to data sources and windows
 - explicit about missing or partial data
 - strong enough to hand to a client without apologizing for it
+- consistent with the Report Blueprint — every included section is present, every excluded section is absent

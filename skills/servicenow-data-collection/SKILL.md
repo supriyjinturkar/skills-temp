@@ -183,6 +183,9 @@ python3 skills/servicenow-data-collection/scripts/run_servicenow_report_pipeline
 - `run/normalized/sn_critical_incidents.json` — P1/P2 incident list
 - `run/normalized/servicenow_report_bundle.json` — single merged bundle for all report sections
 
+For downstream drafting, treat `servicenow_report_bundle.json.sections` as the canonical section map.
+The bundle also keeps the legacy top-level section keys for backward compatibility.
+
 ## Data coverage
 
 The ServiceNow CSI API returns the following data which this skill collects and normalizes:

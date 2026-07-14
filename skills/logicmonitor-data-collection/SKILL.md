@@ -175,6 +175,8 @@ python3 skills/logicmonitor-data-collection/scripts/build_logicmonitor_report_bu
 - `run/normalized/network_interface_throughput.json`
 - `run/normalized/logicmonitor_report_bundle.json`
 
+For downstream drafting, treat `logicmonitor_report_bundle.json.sections` as the canonical section map for LogicMonitor-backed report coverage.
+
 ## Device collection behaviour — recursive sub-group traversal
 
 The LogicMonitor API endpoint `GET /device/groups/{id}/devices` returns only the

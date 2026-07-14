@@ -187,6 +187,8 @@ python3 skills/backupradar-data-collection/scripts/build_backupradar_report_bund
 - `run/normalized/backup_exceptions.json`
 - `run/normalized/backupradar_report_bundle.json`
 
+For downstream drafting, treat `backupradar_report_bundle.json.sections` as the canonical section map for BackupRadar-backed report coverage.
+
 ## Resource-path note
 
 The public BackupRadar docs were not machine-readable enough in this environment to safely hardcode vendor endpoint names beyond the API host and auth model.

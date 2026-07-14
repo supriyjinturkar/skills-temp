@@ -1,0 +1,35 @@
+{
+  "tools": [
+    {
+      "name": "get_story__nexon_",
+      "mcp_server_url": "https://csauat.service-now.com/sncapps/mcp-server/mcp/sn_mcp_server_nexon_mcp",
+      "mcp_server_name": "nexon-servicenow-uat",
+      "display_name": "get_story__nexon_"
+    },
+    {
+      "name": "update_story__nexon_",
+      "mcp_server_url": "https://csauat.service-now.com/sncapps/mcp-server/mcp/sn_mcp_server_nexon_mcp",
+      "mcp_server_name": "nexon-servicenow-uat",
+      "display_name": "update_story__nexon_"
+    },
+    {
+      "name": "create_story__nexon_",
+      "mcp_server_url": "https://csauat.service-now.com/sncapps/mcp-server/mcp/sn_mcp_server_nexon_mcp",
+      "mcp_server_name": "nexon-servicenow-uat",
+      "display_name": "create_story__nexon_"
+    },
+    {
+      "name": "lookup_customer__nexon_csi_",
+      "mcp_server_url": "https://csauat.service-now.com/sncapps/mcp-server/mcp/sn_mcp_server_nexon_mcp",
+      "mcp_server_name": "nexon-servicenow-uat",
+      "display_name": "lookup_customer__nexon_csi_"
+    },
+    {
+      "name": "get_customer_data__nexon_csi_",
+      "mcp_server_url": "https://csauat.service-now.com/sncapps/mcp-server/mcp/sn_mcp_server_nexon_mcp",
+      "mcp_server_name": "nexon-servicenow-uat",
+      "display_name": "get_customer_data__nexon_csi_"
+    }
+  ],
+  "interrupt_config": {}
+}

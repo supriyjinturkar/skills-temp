@@ -1,0 +1,30 @@
+{
+  "name": "dev-nexon-reporting-agent",
+  "description": "",
+  "metadata": {
+    "ls_user_id": "9471aa02-1639-4632-bc72-52a3c7b00e41",
+    "organization_id": "f398787d-c6d0-41dd-9559-6d537e231dc9",
+    "tenant_id": "88729a23-5450-4ab1-b21c-062c3f75f966"
+  },
+  "config": {
+    "configurable": {
+      "should_trace_inputs_outputs": true,
+      "triggers_paused": false,
+      "skip_memory_write_protection": false,
+      "tools_url": "https://apac.tools.langchain.com",
+      "llm_model_config": {
+        "playground_settings_id": "58b1ea6e-f9d1-4ebe-bce2-301d8c1522dc"
+      },
+      "backend_type": "thread_scoped_sandbox",
+      "sandbox_snapshot_id": "6e0f1d10-6444-4a6a-b836-4a392bc554df",
+      "sandbox_policy_ids": [
+        "dd9d4fcf-769d-4d0a-94ac-d77a8775840d",
+        "18eacdfa-2289-4f1a-932a-3fa96457d37d"
+      ],
+      "visibility_scope": "user"
+    }
+  },
+  "triggers": [
+    "d809e66e-0000-4000-8000-000000000004"
+  ]
+}

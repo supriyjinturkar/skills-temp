@@ -1,0 +1,95 @@
+{
+  "tools": [
+    {
+      "name": "teams_reply_to_message",
+      "mcp_server_url": "https://apac.tools.langchain.com",
+      "mcp_server_name": "Fleet",
+      "display_name": "Teams Bot Reply"
+    },
+    {
+      "name": "teams_reply_to_channel",
+      "mcp_server_url": "https://apac.tools.langchain.com",
+      "mcp_server_name": "Fleet",
+      "display_name": "teams_reply_to_channel"
+    },
+    {
+      "name": "teams_bot_send_proactive_message",
+      "mcp_server_url": "https://apac.tools.langchain.com",
+      "mcp_server_name": "Fleet",
+      "display_name": "teams_bot_send_proactive_message"
+    },
+    {
+      "name": "teams_post_channel_message",
+      "mcp_server_url": "https://apac.tools.langchain.com",
+      "mcp_server_name": "Fleet",
+      "display_name": "teams_post_channel_message"
+    },
+    {
+      "name": "teams_create_channel",
+      "mcp_server_url": "https://apac.tools.langchain.com",
+      "mcp_server_name": "Fleet",
+      "display_name": "teams_create_channel"
+    },
+    {
+      "name": "teams_list_channels",
+      "mcp_server_url": "https://apac.tools.langchain.com",
+      "mcp_server_name": "Fleet",
+      "display_name": "teams_list_channels"
+    },
+    {
+      "name": "teams_list_teams",
+      "mcp_server_url": "https://apac.tools.langchain.com",
+      "mcp_server_name": "Fleet",
+      "display_name": "teams_list_teams"
+    },
+    {
+      "name": "teams_write_private_message",
+      "mcp_server_url": "https://apac.tools.langchain.com",
+      "mcp_server_name": "Fleet",
+      "display_name": "teams_write_private_message"
+    },
+    {
+      "name": "teams_read_channel_history",
+      "mcp_server_url": "https://apac.tools.langchain.com",
+      "mcp_server_name": "Fleet",
+      "display_name": "teams_read_channel_history"
+    },
+    {
+      "name": "teams_read_thread_messages",
+      "mcp_server_url": "https://apac.tools.langchain.com",
+      "mcp_server_name": "Fleet",
+      "display_name": "teams_read_thread_messages"
+    },
+    {
+      "name": "get_story__nexon_",
+      "mcp_server_url": "https://csauat.service-now.com/sncapps/mcp-server/mcp/sn_mcp_server_nexon_mcp",
+      "mcp_server_name": "nexon-servicenow-uat",
+      "display_name": "get_story__nexon_"
+    },
+    {
+      "name": "update_story__nexon_",
+      "mcp_server_url": "https://csauat.service-now.com/sncapps/mcp-server/mcp/sn_mcp_server_nexon_mcp",
+      "mcp_server_name": "nexon-servicenow-uat",
+      "display_name": "update_story__nexon_"
+    },
+    {
+      "name": "create_story__nexon_",
+      "mcp_server_url": "https://csauat.service-now.com/sncapps/mcp-server/mcp/sn_mcp_server_nexon_mcp",
+      "mcp_server_name": "nexon-servicenow-uat",
+      "display_name": "create_story__nexon_"
+    },
+    {
+      "name": "lookup_customer__nexon_csi_",
+      "mcp_server_url": "https://csauat.service-now.com/sncapps/mcp-server/mcp/sn_mcp_server_nexon_mcp",
+      "mcp_server_name": "nexon-servicenow-uat",
+      "display_name": "lookup_customer__nexon_csi_"
+    },
+    {
+      "name": "get_customer_data__nexon_csi_",
+      "mcp_server_url": "https://csauat.service-now.com/sncapps/mcp-server/mcp/sn_mcp_server_nexon_mcp",
+      "mcp_server_name": "nexon-servicenow-uat",
+      "display_name": "get_customer_data__nexon_csi_"
+    }
+  ],
+  "interrupt_config": {}
+}

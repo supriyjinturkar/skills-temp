@@ -1,0 +1,62 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+
+def ensure_dir(dir_path: str | Path) -> None:
+    Path(dir_path).mkdir(parents=True, exist_ok=True)
+
+
+def read_json_file(file_path: str | Path):
+    # Fix #17: descriptive errors for missing files and invalid JSON.
+    path = Path(file_path)
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        raise FileNotFoundError(
+            f"Expected input file not found: {path}. "
+            "Check that the previous pipeline step completed successfully and wrote this file."
+        ) from None
+    except PermissionError as exc:
+        raise PermissionError(f"Cannot read file (permission denied): {path}") from exc
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise json.JSONDecodeError(
+            f"File is not valid JSON: {path} — {exc.msg}", exc.doc, exc.pos
+        ) from exc
+
+
+def write_json_file(file_path: str | Path, payload) -> None:
+    path = Path(file_path)
+    ensure_dir(path.parent)
+    path.write_text(f"{json.dumps(payload, indent=2)}\n", encoding="utf-8")
+
+
+def resolve_run_paths(run_dir: str | Path = "run") -> dict[str, str]:
+    root = str(Path(run_dir).resolve())
+    return {
+        "root": root,
+        "source_snapshots_dir": str(Path(root) / "source_snapshots"),
+        "normalized_dir": str(Path(root) / "normalized"),
+        "render_dir": str(Path(root) / "render"),
+        "evidence_dir": str(Path(root) / "evidence"),
+        "customer_context_file": str(Path(root) / "customer_context.json"),
+        "logicmonitor_snapshot_file": str(Path(root) / "source_snapshots" / "logicmonitor.json"),
+        "observability_file": str(Path(root) / "normalized" / "observability.json"),
+        "availability_summary_file": str(Path(root) / "normalized" / "availability_summary.json"),
+        "alert_trends_file": str(Path(root) / "normalized" / "alert_trends.json"),
+        "resource_health_file": str(Path(root) / "normalized" / "resource_health.json"),
+        "monitoring_coverage_file": str(Path(root) / "normalized" / "monitoring_coverage.json"),
+        "website_experience_file": str(Path(root) / "normalized" / "website_experience.json"),
+        "platform_assets_file": str(Path(root) / "normalized" / "platform_assets.json"),
+        "report_inventory_file": str(Path(root) / "normalized" / "report_inventory.json"),
+        "inventory_exceptions_file": str(Path(root) / "normalized" / "inventory_exceptions.json"),
+        "root_scope_summary_file": str(Path(root) / "normalized" / "root_scope_summary.json"),
+        "device_availability_file": str(Path(root) / "normalized" / "device_availability.json"),
+        "cpu_memory_utilization_file": str(Path(root) / "normalized" / "cpu_memory_utilization.json"),
+        "disk_capacity_utilization_file": str(Path(root) / "normalized" / "disk_capacity_utilization.json"),
+        "network_interface_throughput_file": str(Path(root) / "normalized" / "network_interface_throughput.json"),
+        "logicmonitor_bundle_file": str(Path(root) / "normalized" / "logicmonitor_report_bundle.json"),
+    }

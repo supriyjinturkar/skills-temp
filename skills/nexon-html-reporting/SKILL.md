@@ -31,6 +31,7 @@ Treat this skill as guidance, not a rigid template. Use it to shape good decisio
    A monthly service review usually fits period-bound service desk, infrastructure, backup, action, and data-scope reporting. A service intelligence or strategy report usually fits cross-period themes, recurring causes, automation opportunities, and multi-quarter recommendations.
 3. Build the shell before filling details.
    Start with the broad structure, navigation, and component system so the page has a deliberate visual rhythm.
+   If the report uses tabs, make them real in-page section controls that reveal the active panel on click. Do not implement tabs as plain anchor links to sections that are all rendered in one long scroll.
 4. Write evidence-led sections.
    Let each section answer a real question and pair charts or metric groups with short interpretation.
 5. Be explicit about data scope and caveats.
@@ -48,6 +49,7 @@ Use this flow when it helps, but do not force the report into it if a better sha
 - Prefer inline SVG for deterministic charts and diagrams when possible.
 - Use external chart libraries only when they materially improve maintainability and the delivery context permits them.
 - Keep the visual system intentional, with one brand palette, one type system, and one interaction model.
+- If a tabbed layout is used, render only the active tab panel by default and switch panels on click. Do not label simple jump links as tabs.
 - Use color semantically, not decoratively.
 - Keep tables readable without zooming.
 - Keep copy factual and calm, especially in risk sections.

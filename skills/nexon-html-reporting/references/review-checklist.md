@@ -50,6 +50,7 @@ Use these lenses to judge the draft. Score each area as `strong`, `acceptable`, 
 - Generic action items with no owner or operational consequence
 - Canvas-only charts with no fallback text
 - Long pages with no navigation on dense reports
+- Tabs that only jump to anchors while all tab content remains visible in one continuous page
 
 ## Strong-report signals
 

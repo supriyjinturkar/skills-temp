@@ -40,6 +40,7 @@ A service intelligence report often works well with some version of this sequenc
 - Fixed brand header with compact metadata
 - Hero block with period, audience, and purpose
 - Sticky tab bar or compact section navigation for longer reports
+- When using tabs, treat them as content toggles, not anchors. Clicking a tab should open that section's panel and keep non-active tab panels hidden rather than jumping the reader to another point in a fully expanded page.
 - KPI cards for top-line metrics
 - Alert or callout boxes for urgent items
 - Source banners for per-system sections
@@ -50,6 +51,7 @@ A service intelligence report often works well with some version of this sequenc
 ## Patterns that weaken the report
 
 - One long scroll page with no section rhythm
+- Tabs that are only hyperlinks to anchors in a page where every section is already expanded
 - Charts without commentary
 - Commentary without evidence
 - Hidden mixed time windows

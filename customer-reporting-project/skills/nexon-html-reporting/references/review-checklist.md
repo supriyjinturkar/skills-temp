@@ -27,7 +27,6 @@ Use these lenses to judge the draft. Score each area as `strong`, `acceptable`, 
 - Are reporting windows explicit?
 - Are sources named?
 - Are missing or partial datasets disclosed?
-- Can every collected report-ready source section be accounted for as main body, appendix, explicit omission, unavailable, or known gap?
 - Are any claims unsupported by the visible evidence?
 
 ### Operational usefulness
@@ -47,7 +46,6 @@ Use these lenses to judge the draft. Score each area as `strong`, `acceptable`, 
 - Mixed dates that are not explained
 - Commentary that references months outside the headline period without framing
 - Placeholder-style caveats that promise future updates instead of closing the gap cleanly
-- A collected source section disappears without being shown, deferred to appendix, or explicitly omitted with a reason
 - Missing source attribution
 - Generic action items with no owner or operational consequence
 - Canvas-only charts with no fallback text
@@ -57,7 +55,6 @@ Use these lenses to judge the draft. Score each area as `strong`, `acceptable`, 
 ## Strong-report signals
 
 - Explicit source banners or data-scope appendix
-- A source-coverage note or appendix that explains what was included, condensed, deferred, or omitted
 - Exact date windows
 - Honest caveats
 - Prioritized recommendations

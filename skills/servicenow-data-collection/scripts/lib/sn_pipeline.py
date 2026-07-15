@@ -557,18 +557,7 @@ def build_servicenow_artifacts(context: dict, normalized: dict) -> dict:
     fcr = _extract_fcr(normalized)
     critical_incidents = _extract_critical_incidents(normalized)
 
-    bundle = {
-        "dataset": "servicenow_report_bundle",
-        "customer_name": normalized["customer_name"],
-        "customer_sys_id": normalized["customer_sys_id"],
-        "report_family": context["report_family"],
-        "template_key": context["template_key"],
-        "period_label": normalized["period_label"],
-        "period_start": normalized["period_start"],
-        "period_end": normalized["period_end"],
-        "generated_at": normalized["generated_at"],
-        "bundle_built_at": _now_iso(),
-        # All sections
+    sections = {
         "ticket_summary": ticket_summary,
         "incident_summary": incident_summary,
         "request_summary": request_summary,
@@ -580,21 +569,43 @@ def build_servicenow_artifacts(context: dict, normalized: dict) -> dict:
         "dimensions": dimensions,
         "fcr": fcr,
         "critical_incidents": critical_incidents,
-        # Known gaps (for report drafting awareness)
-        "known_gaps": [
-            "category_subcategory_breakdown",
-            "caller_dimension_top_callers",
-            "sla_breach_detail_list",
-            "monthly_sla_breach_counts",
-            "per_priority_sla_targets",
-            "open_request_list_ritm",
-            "change_detail_list_chg",
-            "problem_detail_list_prb",
-            "csat_survey_data",
-            "request_subtype_classification",
-            "action_register_items",
-            "daas_specific_backlog",
-        ],
+    }
+    known_gaps = [
+        "category_subcategory_breakdown",
+        "caller_dimension_top_callers",
+        "sla_breach_detail_list",
+        "monthly_sla_breach_counts",
+        "per_priority_sla_targets",
+        "open_request_list_ritm",
+        "change_detail_list_chg",
+        "problem_detail_list_prb",
+        "csat_survey_data",
+        "request_subtype_classification",
+        "action_register_items",
+        "daas_specific_backlog",
+    ]
+
+    bundle = {
+        "dataset": "servicenow_report_bundle",
+        "customer_name": normalized["customer_name"],
+        "customer_sys_id": normalized["customer_sys_id"],
+        "report_family": context["report_family"],
+        "template_key": context["template_key"],
+        "period_label": normalized["period_label"],
+        "period_start": normalized["period_start"],
+        "period_end": normalized["period_end"],
+        "generated_at": normalized["generated_at"],
+        "bundle_built_at": _now_iso(),
+        "sections": sections,
+        "known_gaps": known_gaps,
+        "reporting_contract": {
+            "canonical_sections_path": "sections",
+            "backward_compatible_top_level_aliases": True,
+            "report_ready_sections": list(sections.keys()),
+            "known_gaps_path": "known_gaps",
+        },
+        # Backward-compatible aliases for existing downstream readers.
+        **sections,
     }
 
     return {

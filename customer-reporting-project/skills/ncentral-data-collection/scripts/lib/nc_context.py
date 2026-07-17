@@ -3,8 +3,12 @@ from __future__ import annotations
 import argparse
 import os
 from datetime import datetime, timezone
+from pathlib import Path
 
 from nc_io import read_json_file
+
+
+DEFAULT_NCENTRAL_JWT_TOKEN_PATH = "/opt/ncentral/NCENTRAL_JWT_TOKEN"
 
 
 def _to_iso(value: str, field_name: str) -> str:
@@ -82,6 +86,22 @@ def load_fleet_customer_context(context_path: str):
     return read_json_file(context_path)
 
 
+def _read_jwt_token_file(token_path: str) -> str:
+    normalized_path = str(token_path or "").strip()
+    if not normalized_path:
+        raise ValueError(
+            "N-central JWT token path is required. Set source_scope.ncentral.jwt_token_path, "
+            "NCENTRAL_JWT_TOKEN_PATH, or mount /opt/ncentral/NCENTRAL_JWT_TOKEN.",
+        )
+    try:
+        token = Path(normalized_path).read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        raise ValueError(f"N-central JWT token file could not be read at {normalized_path}: {exc}") from exc
+    if not token:
+        raise ValueError(f"N-central JWT token file was empty at {normalized_path}.")
+    return token
+
+
 def _resolve_ncentral_base_context(raw_context: dict, now: datetime | None = None) -> dict:
     now = now or datetime.now(timezone.utc)
     customer_id = str(raw_context.get("customer_id") or raw_context.get("id") or "").strip() or "unknown-customer"
@@ -108,7 +128,13 @@ def _resolve_ncentral_base_context(raw_context: dict, now: datetime | None = Non
     raw_scope = (raw_context.get("source_scope") or {}).get("ncentral") or raw_context.get("ncentral") or {}
 
     base_url = str(raw_scope.get("base_url") or os.getenv("NCENTRAL_BASE_URL") or "").strip()
-    user_api_token = str(raw_scope.get("user_api_token") or os.getenv("NCENTRAL_USER_API_TOKEN") or "").strip()
+    jwt_token_path = str(
+        raw_scope.get("jwt_token_path")
+        or os.getenv("NCENTRAL_JWT_TOKEN_PATH")
+        or DEFAULT_NCENTRAL_JWT_TOKEN_PATH
+        or ""
+    ).strip()
+    _read_jwt_token_file(jwt_token_path)
     customer_scope_id = _parse_optional_number(raw_scope.get("customer_id"), "customer_id")
     site_scope_id = _parse_optional_number(raw_scope.get("site_id"), "site_id")
     org_unit_id = _parse_optional_number(raw_scope.get("org_unit_id"), "org_unit_id")
@@ -128,7 +154,7 @@ def _resolve_ncentral_base_context(raw_context: dict, now: datetime | None = Non
 
     scope = {
         "base_url": base_url.rstrip("/"),
-        "user_api_token": user_api_token,
+        "jwt_token_path": jwt_token_path,
         "service_org_id": _parse_optional_number(raw_scope.get("service_org_id"), "service_org_id"),
         "customer_id": customer_scope_id,
         "customer_name": str(raw_scope.get("customer_name") or customer_name).strip() or customer_name,
@@ -173,8 +199,6 @@ def _resolve_ncentral_base_context(raw_context: dict, now: datetime | None = Non
 
     if not scope["base_url"]:
         raise ValueError("source_scope.ncentral.base_url or NCENTRAL_BASE_URL is required.")
-    if not scope["user_api_token"]:
-        raise ValueError("source_scope.ncentral.user_api_token or NCENTRAL_USER_API_TOKEN is required.")
 
     start_dt = datetime.fromisoformat(start_iso.replace("Z", "+00:00"))
     end_dt = datetime.fromisoformat(end_iso.replace("Z", "+00:00"))

@@ -6,6 +6,7 @@ from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
+from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlparse
 from urllib.request import Request, urlopen
@@ -319,13 +320,15 @@ class NCentralApi:
             payload.get("accessToken")
             or payload.get("access_token")
             or _lookup_key(payload, "data.accessToken")
-            or _lookup_key(payload, "tokens.accessToken"),
+            or _lookup_key(payload, "tokens.accessToken")
+            or _lookup_key(payload, "tokens.access.token"),
         )
         refresh_token = _coerce_text(
             payload.get("refreshToken")
             or payload.get("refresh_token")
             or _lookup_key(payload, "data.refreshToken")
-            or _lookup_key(payload, "tokens.refreshToken"),
+            or _lookup_key(payload, "tokens.refreshToken")
+            or _lookup_key(payload, "tokens.refresh.token"),
         )
         if not access_token:
             raise RuntimeError(f"N-central authentication response did not include an access token: {payload}")
@@ -334,12 +337,14 @@ class NCentralApi:
             payload.get("accessTokenExpiresIn")
             or payload.get("expiresIn")
             or _lookup_key(payload, "data.accessTokenExpiresIn")
+            or _lookup_key(payload, "tokens.access.expirySeconds")
             or fallback_seconds,
             fallback_seconds,
         )
         refresh_expires_in = _coerce_int(
             payload.get("refreshTokenExpiresIn")
             or _lookup_key(payload, "data.refreshTokenExpiresIn")
+            or _lookup_key(payload, "tokens.refresh.expirySeconds")
             or max(access_expires_in * 4, 3600),
             max(access_expires_in * 4, 3600),
         )
@@ -349,35 +354,30 @@ class NCentralApi:
         if self.refresh_token:
             self.refresh_token_expires_at = now + max(refresh_expires_in, 1)
 
+    def _load_jwt_token(self) -> None:
+        token_path = _coerce_text(self.config.get("jwt_token_path"))
+        if not token_path:
+            raise RuntimeError("N-central JWT token path is required in the collector config.")
+        try:
+            token = Path(token_path).read_text(encoding="utf-8").strip()
+        except OSError as exc:
+            raise RuntimeError(f"N-central JWT token file could not be read at {token_path}: {exc}") from exc
+        if not token:
+            raise RuntimeError(f"N-central JWT token file was empty at {token_path}.")
+        self.access_token = token
+        self.access_token_expires_at = float("inf")
+        self.refresh_token = ""
+        self.refresh_token_expires_at = 0.0
+
     def authenticate(self) -> None:
-        payload, _headers = self.request_json(
-            "POST",
-            "/api/auth/authenticate",
-            endpoint_key="auth_authenticate",
-            auth_mode="user_api_token",
-            allow_refresh_on_401=False,
-        )
-        self._store_tokens(payload)
+        self._load_jwt_token()
 
     def refresh(self) -> None:
-        if not self.refresh_token or self._token_expired(self.refresh_token_expires_at):
-            self.authenticate()
-            return
-        payload, _headers = self.request_json(
-            "POST",
-            "/api/auth/refresh",
-            endpoint_key="auth_refresh",
-            auth_mode="refresh_token",
-            allow_refresh_on_401=False,
-        )
+        self._load_jwt_token()
         self.diagnostics["auth_refreshes"] += 1
-        self._store_tokens(payload)
 
     def _ensure_access_token(self) -> None:
-        if self.access_token and not self._token_expired(self.access_token_expires_at):
-            return
-        if self.refresh_token and not self._token_expired(self.refresh_token_expires_at):
-            self.refresh()
+        if self.access_token:
             return
         self.authenticate()
 
@@ -406,8 +406,6 @@ class NCentralApi:
                 headers["Authorization"] = f"Bearer {self.access_token}"
             elif auth_mode == "refresh_token":
                 headers["Authorization"] = f"Bearer {self.refresh_token}"
-            elif auth_mode == "user_api_token":
-                headers["Authorization"] = f"Bearer {self.config['user_api_token']}"
             url = _build_url(self.config["base_url"], path, query)
             body_text = json.dumps(body) if body is not None else ""
             status, response_headers, response_body = self._transport(method, url, headers, body_text)

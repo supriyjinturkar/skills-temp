@@ -77,17 +77,18 @@ Minimum direct-collection context when scope is already known:
 
 ## Authentication
 
-Per the official N-central authentication flow, the collector authenticates with a **User-API Token** and then manages short-lived access and refresh JWTs automatically for the run.
+The collector reads a bearer JWT from the sandbox-local token file.
 
-Provide credentials in either the context or the environment:
+Provide configuration in either the context or the environment:
 
 - `source_scope.ncentral.base_url` or `NCENTRAL_BASE_URL`
-- `source_scope.ncentral.user_api_token` or `NCENTRAL_USER_API_TOKEN`
+- `source_scope.ncentral.jwt_token_path` or `NCENTRAL_JWT_TOKEN_PATH`
 
-Do not place access tokens or refresh tokens in the run context. The collector obtains and refreshes them automatically through:
+By default, the collector reads the token from:
 
-- `POST /api/auth/authenticate`
-- `POST /api/auth/refresh`
+- `/opt/ncentral/NCENTRAL_JWT_TOKEN`
+
+Do not place the raw JWT in the run context. The collector reads the token text file directly and reloads it from disk if an API call returns `401` or `403`.
 
 ## Standard flow
 
@@ -179,7 +180,7 @@ The report bundle is optimized for infrastructure posture reporting rather than 
 ## Production guardrails
 
 - Collection is customer-scoped or site-scoped by default. Do not use tenant-wide collection as a normal report path.
-- The collector handles JWT refresh automatically and retries transient failures, including `429` rate-limit responses.
+- The collector reloads the JWT from disk on `401`/`403` responses and retries transient failures, including `429` rate-limit responses.
 - The collector respects the documented N-central endpoint concurrency limits:
   - `GET /api/org-units/{orgUnitId}/active-issues`: max `3`
   - `GET /api/customers`, `GET /api/sites`, `GET /api/org-units/{orgUnitId}/devices`, `GET /api/org-units/{orgUnitId}/custom-properties`, `GET /api/devices/{deviceId}/custom-properties`: max `5`

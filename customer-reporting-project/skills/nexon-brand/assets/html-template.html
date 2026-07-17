@@ -3,296 +3,821 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Nexon — [Page Title]</title>
-
-  <!-- Inter from Google Fonts (web font) -->
+  <title>{{REPORT_TITLE}} | {{REPORT_PERIOD}}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+
+  <noscript>
+    <style>
+      .tab-bar-wrap { display: none !important; }
+      .tab-panel { display: block !important; }
+    </style>
+  </noscript>
 
   <style>
-    /* ─── Nexon Design Tokens ──────────────────────────────────────────── */
     :root {
-      --nexon-retina:    #000000;
-      --nexon-cloud:     #ffffff;
+      --nexon-retina: #000000;
+      --nexon-cloud: #ffffff;
       --nexon-satellite: #f7f2f2;
-      --nexon-overlay:   #343842;
-      --nexon-wildcard:  #00c982;
+      --nexon-overlay: #343842;
+      --nexon-wildcard: #00c982;
       --nexon-bluetooth: #2e8af5;
-      --nexon-encrypt:   #e34749;
-      --nexon-gateway:   #ffbf00;
+      --nexon-encrypt: #e34749;
+      --nexon-gateway: #ffbf00;
+      --success: #00c982;
+      --warning: #ffbf00;
+      --danger: #e34749;
+      --info: #2e8af5;
+      --neutral: #6b7280;
+      --border: #e5e5e5;
+      --card-bg: #ffffff;
+      --section-gap: 2.5rem;
+      --radius-lg: 16px;
+      --radius-md: 12px;
+      --radius-sm: 8px;
+      --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.04);
+      --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
     }
 
-    /* ─── Base Reset ───────────────────────────────────────────────────── */
-    * { margin: 0; padding: 0; box-sizing: border-box; }
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html {
+      font-size: 15px;
+      scroll-behavior: smooth;
+    }
+
     body {
-      font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif;
+      font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
       background: var(--nexon-satellite);
       color: var(--nexon-retina);
-      padding-top: 64px;   /* offset for fixed header */
-      padding-bottom: 80px;
+      line-height: 1.55;
     }
 
-    /* ─── Header ───────────────────────────────────────────────────────── */
     .header {
-      background: var(--nexon-retina);
-      padding: 0 32px;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 100;
       height: 64px;
+      padding: 0 32px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      position: fixed;
-      top: 0; left: 0; right: 0;
-      z-index: 100;
-    }
-    .header img.logo {
-      height: 28px;         /* maintain aspect ratio; min 100px wide enforced by source */
-      width: auto;
-    }
-
-    /* ─── Page Wrapper ─────────────────────────────────────────────────── */
-    .page-wrapper {
-      max-width: 1200px;
-      margin: 0 auto;
-      padding: 40px 32px;
-    }
-
-    /* ─── Hero ─────────────────────────────────────────────────────────── */
-    .hero {
       background: var(--nexon-retina);
-      border-radius: 16px;
-      padding: 48px 40px;
-      color: var(--nexon-cloud);
+    }
+
+    .header img {
+      height: 32px;
+      width: auto;
+      display: block;
+    }
+
+    .header-tag {
+      color: rgba(255, 255, 255, 0.65);
+      font-size: 0.8rem;
+      font-weight: 600;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+    }
+
+    .body-offset {
+      padding-top: 64px;
+    }
+
+    .hero {
       position: relative;
       overflow: hidden;
-      margin-bottom: 32px;
+      padding: 3.25rem 3rem 2.75rem;
+      background: var(--nexon-retina);
+      color: var(--nexon-cloud);
+      border-radius: 0 0 var(--radius-lg) var(--radius-lg);
     }
+
     .hero::before {
-      content: '';
+      content: "";
       position: absolute;
-      top: -50%; right: -10%;
-      width: 300px; height: 300px;
-      background: linear-gradient(135deg, var(--nexon-wildcard) 0%, transparent 60%);
+      top: -40%;
+      right: -6%;
+      width: 380px;
+      height: 380px;
       border-radius: 50%;
-      opacity: 0.1;
-    }
-    .hero h1 {
-      font-size: 36px;
-      font-weight: 700;
-      line-height: 1.2;
-      margin-bottom: 12px;
-    }
-    .hero p {
-      font-size: 16px;
-      color: rgba(255,255,255,0.75);
-      max-width: 560px;
+      background: radial-gradient(circle at center, var(--nexon-wildcard) 0%, transparent 62%);
+      opacity: 0.16;
     }
 
-    /* ─── Cards ────────────────────────────────────────────────────────── */
-    .card-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-      gap: 20px;
-      margin-bottom: 32px;
-    }
-    .card {
-      background: var(--nexon-cloud);
-      border: 1px solid #e5e5e5;
-      border-radius: 12px;
-      padding: 24px;
-      transition: border-color 0.15s, box-shadow 0.15s;
-    }
-    .card:hover {
-      border-color: var(--nexon-retina);
-      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-    }
-    .card h3 {
-      font-size: 16px;
-      font-weight: 600;
-      margin-bottom: 8px;
-    }
-    .card p {
-      font-size: 14px;
-      color: var(--nexon-overlay);
-      line-height: 1.5;
+    .hero > * {
+      position: relative;
+      z-index: 1;
     }
 
-    /* ─── Icon Container ───────────────────────────────────────────────── */
-    .icon {
-      width: 40px; height: 40px;
-      border-radius: 10px;
-      background: rgba(0, 201, 130, 0.12);
-      display: flex; align-items: center; justify-content: center;
-      color: var(--nexon-overlay);
-      margin-bottom: 16px;
-    }
-
-    /* ─── Table ────────────────────────────────────────────────────────── */
-    .table-wrapper {
-      background: var(--nexon-cloud);
-      border-radius: 12px;
-      border: 1px solid #e5e5e5;
-      overflow: hidden;
-      margin-bottom: 32px;
-    }
-    table { width: 100%; border-collapse: collapse; }
-    th {
-      text-align: left;
-      padding: 12px 16px;
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--nexon-overlay);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      background: var(--nexon-satellite);
-      border-bottom: 1px solid #e5e5e5;
-    }
-    td {
-      padding: 14px 16px;
-      font-size: 14px;
-      border-bottom: 1px solid #f0f0f0;
-    }
-    tr:last-child td { border-bottom: none; }
-    tr:hover td { background: var(--nexon-satellite); }
-
-    /* ─── Badges ───────────────────────────────────────────────────────── */
-    .badge {
+    .hero-eyebrow {
       display: inline-flex;
       align-items: center;
-      gap: 4px;
-      padding: 3px 10px;
-      border-radius: 100px;
-      font-size: 12px;
-      font-weight: 500;
-    }
-    .badge-green  { background: rgba(0, 201, 130, 0.15); color: #00875a; }
-    .badge-yellow { background: rgba(255, 191, 0, 0.15);  color: #946c00; }
-    .badge-red    { background: rgba(227, 71, 74, 0.15);  color: #c41e3a; }
-    .badge-blue   { background: rgba(46, 138, 245, 0.15); color: #0066cc; }
-    .badge-gray   { background: rgba(0, 0, 0, 0.08);      color: #666;    }
-
-    /* ─── CTA Button ───────────────────────────────────────────────────── */
-    .btn-primary {
-      display: inline-block;
-      padding: 12px 24px;
-      background: var(--nexon-wildcard);
-      color: var(--nexon-cloud);
-      border: none;
-      border-radius: 8px;
-      font-family: inherit;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+      font-size: 0.82rem;
       font-weight: 600;
-      font-size: 14px;
-      cursor: pointer;
-      text-decoration: none;
-      transition: opacity 0.15s;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--nexon-wildcard);
     }
-    .btn-primary:hover { opacity: 0.88; }
 
-    /* ─── Footer ───────────────────────────────────────────────────────── */
+    .hero h1 {
+      font-size: 2.35rem;
+      font-weight: 800;
+      line-height: 1.15;
+      letter-spacing: -0.01em;
+    }
+
+    .hero-accent {
+      width: 56px;
+      height: 4px;
+      margin: 0.9rem 0 1.1rem;
+      border-radius: 2px;
+      background: var(--nexon-wildcard);
+    }
+
+    .hero-subtitle {
+      max-width: 880px;
+      font-size: 1.05rem;
+      opacity: 0.82;
+    }
+
+    .hero-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      margin-top: 1.5rem;
+    }
+
+    .meta-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.45rem 0.9rem;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      border-radius: var(--radius-sm);
+      background: rgba(255, 255, 255, 0.08);
+      color: rgba(255, 255, 255, 0.9);
+      font-size: 0.82rem;
+    }
+
+    .meta-item svg {
+      flex-shrink: 0;
+    }
+
+    .tab-bar-wrap {
+      position: sticky;
+      top: 64px;
+      z-index: 90;
+      margin-bottom: var(--section-gap);
+      background: var(--nexon-cloud);
+      border-bottom: 1px solid var(--border);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .tab-bar {
+      max-width: 1140px;
+      margin: 0 auto;
+      padding: 0 1.5rem;
+      display: flex;
+      gap: 0.25rem;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .tab-btn {
+      appearance: none;
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 0.95rem 1.05rem;
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      white-space: nowrap;
+      color: var(--neutral);
+      font-family: inherit;
+      font-size: 0.86rem;
+      font-weight: 600;
+      transition: color 0.15s;
+    }
+
+    .tab-btn:hover,
+    .tab-btn.is-active {
+      color: var(--nexon-retina);
+    }
+
+    .tab-btn.is-active::after {
+      content: "";
+      position: absolute;
+      left: 0.7rem;
+      right: 0.7rem;
+      bottom: -1px;
+      height: 3px;
+      border-radius: 3px 3px 0 0;
+      background: var(--nexon-wildcard);
+    }
+
+    .tab-flag {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .flag-green { background: var(--success); }
+    .flag-amber { background: var(--warning); }
+    .flag-red { background: var(--danger); }
+    .flag-blue { background: var(--info); }
+    .flag-neutral { background: var(--neutral); }
+
+    .page {
+      max-width: 1140px;
+      margin: 0 auto;
+      padding: 0 1.5rem 4rem;
+    }
+
+    .tab-panel {
+      display: none;
+      animation: fade 0.25s ease;
+    }
+
+    .tab-panel.is-active {
+      display: block;
+    }
+
+    @keyframes fade {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: none; }
+    }
+
+    .section {
+      margin-bottom: var(--section-gap);
+    }
+
+    .section-title {
+      margin-bottom: 1.25rem;
+      padding-left: 0.75rem;
+      border-left: 4px solid var(--nexon-wildcard);
+      color: var(--nexon-retina);
+      font-size: 1.3rem;
+      font-weight: 700;
+    }
+
+    .section-subtitle {
+      margin: -0.9rem 0 1.25rem;
+      padding-left: 1.1rem;
+      color: var(--neutral);
+      font-size: 0.9rem;
+    }
+
+    .source-banner {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      margin-bottom: 1rem;
+      padding: 0.55rem 1rem;
+      border: 1px solid var(--border);
+      border-left: 4px solid var(--nexon-retina);
+      border-radius: var(--radius-sm);
+      background: var(--nexon-cloud);
+      color: var(--nexon-retina);
+      font-size: 0.82rem;
+      font-weight: 600;
+    }
+
+    .source-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .dot-sn { background: var(--nexon-bluetooth); }
+    .dot-lm { background: var(--nexon-wildcard); }
+    .dot-br { background: var(--nexon-gateway); }
+    .dot-nc { background: var(--nexon-encrypt); }
+
+    .stack {
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
+
+    .kpi-grid,
+    .stat-grid,
+    .pillar-grid,
+    .two-col-grid {
+      display: grid;
+      gap: 1rem;
+    }
+
+    .kpi-grid {
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    }
+
+    .stat-grid {
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    }
+
+    .pillar-grid {
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    }
+
+    .two-col-grid {
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 1.4rem 1.6rem;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .card:hover {
+      border-color: var(--nexon-retina);
+      box-shadow: var(--shadow-md);
+    }
+
+    .card-title {
+      margin-bottom: 0.3rem;
+      color: var(--nexon-overlay);
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .card-value {
+      color: var(--nexon-retina);
+      font-size: 2rem;
+      font-weight: 700;
+      line-height: 1.1;
+    }
+
+    .card-value.ok { color: var(--success); }
+    .card-value.warn { color: #946c00; }
+    .card-value.danger { color: var(--danger); }
+    .card-note {
+      margin-top: 0.25rem;
+      color: var(--neutral);
+      font-size: 0.8rem;
+    }
+
+    .pill {
+      display: inline-block;
+      padding: 0.18rem 0.65rem;
+      border-radius: 1rem;
+      font-size: 0.74rem;
+      font-weight: 600;
+    }
+
+    .pill-green  { background: rgba(0, 201, 130, 0.15); color: #00875a; }
+    .pill-amber  { background: rgba(255, 191, 0, 0.15); color: #946c00; }
+    .pill-red    { background: rgba(227, 71, 74, 0.15); color: #c41e3a; }
+    .pill-blue   { background: rgba(46, 138, 245, 0.15); color: #0066cc; }
+    .pill-gray   { background: rgba(0, 0, 0, 0.08); color: #666666; }
+
+    .posture-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      padding: 0.42rem 1rem;
+      border-radius: 2rem;
+      font-size: 0.88rem;
+      font-weight: 600;
+    }
+
+    .posture-green {
+      background: rgba(0, 201, 130, 0.15);
+      color: #00875a;
+      border: 1px solid rgba(0, 201, 130, 0.5);
+    }
+
+    .posture-amber {
+      background: rgba(255, 191, 0, 0.15);
+      color: #946c00;
+      border: 1px solid rgba(255, 191, 0, 0.5);
+    }
+
+    .posture-red {
+      background: rgba(227, 71, 74, 0.15);
+      color: #c41e3a;
+      border: 1px solid rgba(227, 71, 74, 0.5);
+    }
+
+    .callout {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.65rem;
+      padding: 0.85rem 1.1rem;
+      border-radius: 10px;
+      font-size: 0.875rem;
+    }
+
+    .callout-warn {
+      background: rgba(255, 191, 0, 0.10);
+      border-left: 4px solid var(--warning);
+      color: #6b4e00;
+    }
+
+    .callout-danger {
+      background: rgba(227, 71, 74, 0.09);
+      border-left: 4px solid var(--danger);
+      color: #8a1f21;
+    }
+
+    .callout-info {
+      background: rgba(46, 138, 245, 0.09);
+      border-left: 4px solid var(--info);
+      color: #12457e;
+    }
+
+    .callout-ok {
+      background: rgba(0, 201, 130, 0.10);
+      border-left: 4px solid var(--success);
+      color: #005f3d;
+    }
+
+    .commentary {
+      padding: 0.9rem 1.1rem;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--nexon-satellite);
+      color: var(--nexon-overlay);
+      font-size: 0.87rem;
+      line-height: 1.6;
+    }
+
+    .commentary strong {
+      color: var(--nexon-retina);
+    }
+
+    .chart-wrap,
+    .tbl-wrap {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      background: var(--card-bg);
+    }
+
+    .chart-wrap {
+      padding: 1.25rem 1.5rem;
+    }
+
+    .chart-title {
+      margin-bottom: 0.75rem;
+      color: var(--nexon-overlay);
+      font-size: 0.78rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    svg.chart {
+      display: block;
+      width: 100%;
+      height: auto;
+      overflow: visible;
+    }
+
+    .tbl-wrap {
+      overflow-x: auto;
+    }
+
+    .tbl {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+    }
+
+    .tbl th {
+      padding: 0.7rem 0.85rem;
+      background: var(--nexon-satellite);
+      color: var(--nexon-overlay);
+      text-align: left;
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .tbl td {
+      padding: 0.55rem 0.85rem;
+      border-bottom: 1px solid #f0f0f0;
+      vertical-align: top;
+    }
+
+    .tbl tr:last-child td {
+      border-bottom: none;
+    }
+
+    .tbl tr:hover td {
+      background: var(--nexon-satellite);
+    }
+
+    .action-row td:first-child {
+      width: 3rem;
+      color: var(--nexon-retina);
+      font-weight: 700;
+    }
+
     .footer {
-      background: var(--nexon-retina);
-      padding: 24px 32px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin-top: 64px;
+      gap: 1rem;
+      margin-top: 3rem;
+      padding: 1.35rem 1.5rem;
+      border-radius: var(--radius-md);
+      background: var(--nexon-retina);
     }
-    .footer img.logo { height: 24px; width: auto; opacity: 0.35; }
-    .footer p { font-size: 12px; color: rgba(255,255,255,0.4); }
+
+    .footer img {
+      height: 24px;
+      width: auto;
+      opacity: 0.35;
+    }
+
+    .foot-text {
+      color: rgba(255, 255, 255, 0.52);
+      font-size: 0.78rem;
+      line-height: 1.55;
+      text-align: right;
+    }
+
+    @media (max-width: 900px) {
+      .header {
+        padding: 0 20px;
+      }
+
+      .hero {
+        padding: 2.5rem 1.5rem 2.25rem;
+      }
+
+      .hero h1 {
+        font-size: 1.9rem;
+      }
+    }
+
+    @media (max-width: 700px) {
+      .page {
+        padding: 0 1rem 3rem;
+      }
+
+      .tab-bar {
+        padding: 0 1rem;
+      }
+
+      .kpi-grid,
+      .stat-grid {
+        grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      }
+
+      .footer {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .foot-text {
+        text-align: left;
+      }
+    }
   </style>
 </head>
 <body>
-
-  <!-- ═══ HEADER ══════════════════════════════════════════════════════════ -->
-  <!--
-    Replace the src below with the Base64 data URI of the Nexon logo.
-    To generate: python3 -c "import base64; print(base64.b64encode(open('nexon-logo-black-bg.png','rb').read()).decode())"
-    Then prefix with: data:image/png;base64,<output>
-  -->
+  <!-- Replace {{NEXON_LOGO_BASE64}} with the official Nexon logo data URI payload only. -->
   <header class="header">
-    <img class="logo" src="data:image/png;base64,LOGO_BASE64_HERE" alt="Nexon" />
-    <!-- Optional nav links -->
-    <!-- <nav>...</nav> -->
+    <img src="data:image/png;base64,{{NEXON_LOGO_BASE64}}" alt="Nexon" />
+    <div class="header-tag">{{HEADER_TAG}}</div>
   </header>
 
-  <!-- ═══ PAGE CONTENT ════════════════════════════════════════════════════ -->
-  <div class="page-wrapper">
-
-    <!-- Hero -->
+  <div class="body-offset">
     <section class="hero">
-      <h1>Page Heading Goes Here</h1>
-      <p>A short, benefit-led descriptor. Active voice. Second-person "you".</p>
+      <div class="hero-eyebrow">{{REPORT_EYEBROW}}</div>
+      <h1>{{REPORT_TITLE}}</h1>
+      <div class="hero-accent"></div>
+      <p class="hero-subtitle">{{REPORT_SUBTITLE}}</p>
+
+      <div class="hero-meta">
+        {{HERO_META_ITEMS}}
+        <!-- Example:
+        <div class="meta-item">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="3" y="4" width="18" height="18" rx="2"></rect>
+            <line x1="16" y1="2" x2="16" y2="6"></line>
+            <line x1="8" y1="2" x2="8" y2="6"></line>
+            <line x1="3" y1="10" x2="21" y2="10"></line>
+          </svg>
+          Reporting window: 1 Jun 2026 - 30 Jun 2026
+        </div>
+        -->
+      </div>
     </section>
 
-    <!-- Example Card Grid -->
-    <div class="card-grid">
-      <div class="card">
-        <!-- Lucide-style SVG icon — no emoji -->
-        <div class="icon">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
-               stroke="currentColor" stroke-width="1.75"
-               stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="9"/>
-            <path d="M12 8v4l3 3"/>
-          </svg>
-        </div>
-        <h3>Card Title</h3>
-        <p>Supporting description — concise, active voice.</p>
-      </div>
-
-      <div class="card">
-        <div class="icon">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
-               stroke="currentColor" stroke-width="1.75"
-               stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
-          </svg>
-        </div>
-        <h3>Card Title</h3>
-        <p>Supporting description — concise, active voice.</p>
-      </div>
+    <div class="tab-bar-wrap">
+      <nav class="tab-bar" aria-label="Report sections">
+        {{TAB_BUTTONS}}
+        <button class="tab-btn is-active" type="button" data-tab="dummy-overview">
+          <span class="tab-flag flag-blue"></span>
+          Dummy overview
+        </button>
+        <button class="tab-btn" type="button" data-tab="dummy-detail">
+          <span class="tab-flag flag-green"></span>
+          Dummy detail
+        </button>
+        <!-- Replace or remove these dummy tabs in real reports. They are included to demonstrate the tabbing pattern. -->
+      </nav>
     </div>
 
-    <!-- Example Table -->
-    <div class="table-wrapper">
-      <table>
-        <thead>
-          <tr>
-            <th>Column A</th>
-            <th>Column B</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>Row value</td>
-            <td>Row value</td>
-            <td><span class="badge badge-green">Healthy</span></td>
-          </tr>
-          <tr>
-            <td>Row value</td>
-            <td>Row value</td>
-            <td><span class="badge badge-yellow">Warning</span></td>
-          </tr>
-          <tr>
-            <td>Row value</td>
-            <td>Row value</td>
-            <td><span class="badge badge-red">Critical</span></td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+    <main class="page">
+      {{TAB_PANELS}}
 
-    <!-- CTA -->
-    <a href="#" class="btn-primary">Call to Action</a>
+      <!--
+        Example panel structure. Duplicate, rename, expand, or remove panels to match the report blueprint.
+        Keep the shell, tabs, section rhythm, and component classes consistent across reports.
+      -->
+      <section class="tab-panel is-active" id="tab-dummy-overview" data-tab-panel>
+        <div class="section">
+          <div class="section-title">Dummy overview tab panel</div>
+          <div class="section-subtitle">Use this first sample panel to understand the active tab and summary layout pattern.</div>
 
-  </div><!-- /.page-wrapper -->
+          <div class="stack">
+            <div class="two-col-grid">
+              <div class="card">
+                <div class="card-title">Dummy posture</div>
+                <div class="posture-badge posture-amber">Watch</div>
+                <div class="card-note">Replace this with the opening message for the real tab.</div>
+              </div>
+              <div class="commentary">
+                <strong>How to use this panel:</strong> Swap this dummy content for your real summary content while preserving the shell and spacing rhythm.
+              </div>
+            </div>
 
-  <!-- ═══ FOOTER ══════════════════════════════════════════════════════════ -->
-  <footer class="footer">
-    <img class="logo" src="data:image/png;base64,LOGO_BASE64_HERE" alt="Nexon" />
-    <p>&copy; 2025 Nexon. All rights reserved.</p>
-  </footer>
+            <div class="kpi-grid">
+              <div class="card">
+                <div class="card-title">Dummy KPI</div>
+                <div class="card-value">99.8%</div>
+                <div class="card-note">Top-line metric example.</div>
+              </div>
+              <div class="card">
+                <div class="card-title">Dummy KPI</div>
+                <div class="card-value warn">72%</div>
+                <div class="card-note">Semantic state example.</div>
+              </div>
+              <div class="card">
+                <div class="card-title">Dummy KPI</div>
+                <div class="card-value">142</div>
+                <div class="card-note">Count metric example.</div>
+              </div>
+              <div class="card">
+                <div class="card-title">Dummy KPI</div>
+                <div class="card-value ok">0</div>
+                <div class="card-note">Healthy metric example.</div>
+              </div>
+            </div>
 
+            <div class="callout callout-info">
+              <div>
+                Use this area for a concise caveat, reporting-window note, or immediate action cue.
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="tab-panel" id="tab-dummy-detail" data-tab-panel>
+        <div class="section">
+          <div class="source-banner">
+            <span class="source-dot dot-sn"></span>
+            Dummy detail tab - use a source banner when the real section is tied to a specific system.
+          </div>
+
+          <div class="section-title">Dummy detail tab panel</div>
+          <div class="section-subtitle">Use this second sample panel to understand how a non-default tab can hold charts, tables, and commentary.</div>
+
+          <div class="stack">
+            <div class="chart-wrap">
+              <div class="chart-title">Inline SVG chart placeholder</div>
+              <svg class="chart" viewBox="0 0 640 220" role="img" aria-label="Example chart placeholder">
+                <line x1="52" y1="24" x2="52" y2="182" stroke="#cfcfcf" />
+                <line x1="52" y1="182" x2="604" y2="182" stroke="#cfcfcf" />
+                <rect x="96" y="118" width="58" height="64" fill="#2e8af5" rx="6" />
+                <rect x="196" y="90" width="58" height="92" fill="#2e8af5" rx="6" />
+                <rect x="296" y="64" width="58" height="118" fill="#2e8af5" rx="6" />
+                <rect x="396" y="104" width="58" height="78" fill="#2e8af5" rx="6" />
+                <rect x="496" y="76" width="58" height="106" fill="#2e8af5" rx="6" />
+                <text x="110" y="204" fill="#6b7280" font-size="12">Feb</text>
+                <text x="210" y="204" fill="#6b7280" font-size="12">Mar</text>
+                <text x="310" y="204" fill="#6b7280" font-size="12">Apr</text>
+                <text x="410" y="204" fill="#6b7280" font-size="12">May</text>
+                <text x="510" y="204" fill="#6b7280" font-size="12">Jun</text>
+              </svg>
+            </div>
+
+            <div class="commentary">
+              Replace this dummy chart and commentary with the real detail view for the tab. Keep the component structure, but swap in real evidence.
+            </div>
+
+            <div class="tbl-wrap">
+              <table class="tbl">
+                <thead>
+                  <tr>
+                    <th>Column</th>
+                    <th>Column</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Dummy row</td>
+                    <td>Use tables for ranked or exception detail.</td>
+                    <td><span class="pill pill-green">Healthy</span></td>
+                  </tr>
+                  <tr>
+                    <td>Dummy row</td>
+                    <td>Keep labels short and readable.</td>
+                    <td><span class="pill pill-amber">Watch</span></td>
+                  </tr>
+                  <tr>
+                    <td>Dummy row</td>
+                    <td>Move long evidence tables to appendix when crowded.</td>
+                    <td><span class="pill pill-red">Critical</span></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <footer class="footer">
+        <img src="data:image/png;base64,{{NEXON_LOGO_BASE64}}" alt="Nexon" />
+        <div class="foot-text">
+          {{FOOTER_LINE_1}}<br />
+          {{FOOTER_LINE_2}}
+        </div>
+      </footer>
+    </main>
+  </div>
+
+  <script>
+    (function () {
+      var buttons = Array.prototype.slice.call(document.querySelectorAll("[data-tab]"));
+      var panels = Array.prototype.slice.call(document.querySelectorAll("[data-tab-panel]"));
+
+      if (!buttons.length || !panels.length) {
+        return;
+      }
+
+      function setActiveTab(tabId) {
+        buttons.forEach(function (button) {
+          var isActive = button.getAttribute("data-tab") === tabId;
+          button.classList.toggle("is-active", isActive);
+          button.setAttribute("aria-selected", isActive ? "true" : "false");
+        });
+
+        panels.forEach(function (panel) {
+          var isActive = panel.id === "tab-" + tabId;
+          panel.classList.toggle("is-active", isActive);
+        });
+      }
+
+      buttons.forEach(function (button, index) {
+        button.setAttribute("role", "tab");
+        button.setAttribute("aria-selected", button.classList.contains("is-active") ? "true" : "false");
+        button.addEventListener("click", function () {
+          setActiveTab(button.getAttribute("data-tab"));
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        });
+
+        if (index === 0 && !document.querySelector(".tab-btn.is-active")) {
+          button.classList.add("is-active");
+        }
+      });
+
+      if (!document.querySelector(".tab-panel.is-active")) {
+        var defaultTab = document.querySelector(".tab-btn.is-active");
+        if (defaultTab) {
+          setActiveTab(defaultTab.getAttribute("data-tab"));
+        }
+      } else {
+        var activeButton = document.querySelector(".tab-btn.is-active");
+        if (activeButton) {
+          setActiveTab(activeButton.getAttribute("data-tab"));
+        }
+      }
+    })();
+  </script>
 </body>
 </html>

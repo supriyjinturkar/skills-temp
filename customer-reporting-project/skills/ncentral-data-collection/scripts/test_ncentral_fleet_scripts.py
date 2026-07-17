@@ -18,7 +18,13 @@ from nc_io import resolve_run_paths
 from nc_pipeline import resolve_ncentral_scope_by_company, run_ncentral_pipeline
 
 
-def build_lookup_context():
+def write_jwt_token_file(root: Path, token: str = "jwt-1") -> Path:
+    token_path = root / "NCENTRAL_JWT_TOKEN"
+    token_path.write_text(f"{token}\n", encoding="utf-8")
+    return token_path
+
+
+def build_lookup_context(jwt_token_path: str):
     return {
         "company_name": "Customer A",
         "customer_name": "Customer A",
@@ -29,14 +35,14 @@ def build_lookup_context():
         "source_scope": {
             "ncentral": {
                 "base_url": "https://ncentral.example.com",
-                "user_api_token": "user-api-token",
+                "jwt_token_path": jwt_token_path,
                 "service_org_id": 1001,
             }
         },
     }
 
 
-def build_direct_context():
+def build_direct_context(jwt_token_path: str):
     return {
         "customer_id": "customer-a",
         "customer_name": "Customer A",
@@ -50,7 +56,7 @@ def build_direct_context():
         "source_scope": {
             "ncentral": {
                 "base_url": "https://ncentral.example.com",
-                "user_api_token": "user-api-token",
+                "jwt_token_path": jwt_token_path,
                 "service_org_id": 1001,
                 "customer_id": 2001,
                 "customer_name": "Customer A",
@@ -65,11 +71,11 @@ def build_direct_context():
     }
 
 
-def create_fetch_mock(enable_resilience: bool):
+def create_fetch_mock(enable_resilience: bool, token_path: Path | None = None):
     state = {
         "devices_401_emitted": False,
         "root_429_emitted": False,
-        "issued_tokens": [],
+        "seen_authorization_headers": [],
     }
 
     def paged(items):
@@ -178,28 +184,7 @@ def create_fetch_mock(enable_resilience: bool):
         path = parsed.path
         query = dict(parse_qsl(parsed.query))
         auth = headers.get("Authorization", "")
-
-        if path.endswith("/api/auth/authenticate"):
-            state["issued_tokens"].append("access-1")
-            return 200, {}, json.dumps(
-                {
-                    "accessToken": "access-1",
-                    "refreshToken": "refresh-1",
-                    "accessTokenExpiresIn": 900,
-                    "refreshTokenExpiresIn": 3600,
-                }
-            )
-
-        if path.endswith("/api/auth/refresh"):
-            state["issued_tokens"].append("access-2")
-            return 200, {}, json.dumps(
-                {
-                    "accessToken": "access-2",
-                    "refreshToken": "refresh-2",
-                    "accessTokenExpiresIn": 900,
-                    "refreshTokenExpiresIn": 3600,
-                }
-            )
+        state["seen_authorization_headers"].append(auth)
 
         if path.endswith("/api/service-orgs/1001/customers") or path.endswith("/api/customers"):
             return 200, {}, json.dumps(paged(customers))
@@ -211,8 +196,10 @@ def create_fetch_mock(enable_resilience: bool):
             return 200, {}, json.dumps(paged(sites))
 
         if path.endswith("/api/org-units/2001/devices"):
-            if enable_resilience and auth == "Bearer access-1" and not state["devices_401_emitted"]:
+            if enable_resilience and auth == "Bearer jwt-1" and not state["devices_401_emitted"]:
                 state["devices_401_emitted"] = True
+                if token_path is not None:
+                    token_path.write_text("jwt-2\n", encoding="utf-8")
                 return 401, {}, json.dumps({"message": "token expired"})
             return 200, {}, json.dumps(paged(devices))
 
@@ -242,6 +229,7 @@ def create_fetch_mock(enable_resilience: bool):
 
         raise AssertionError(f"Unhandled URL {url} with query {query} and auth {auth}")
 
+    fetch_impl.state = state
     return fetch_impl
 
 
@@ -259,68 +247,77 @@ class NCentralFleetScriptsTest(unittest.TestCase):
         )
 
     def test_context_requires_scope(self):
-        with self.assertRaisesRegex(ValueError, "org_unit_id, customer_id, or site_id"):
-            resolve_ncentral_context(
-                {
-                    "customer_id": "x",
-                    "customer_name": "X",
-                    "period": {"start": "2026-07-01T00:00:00Z", "end": "2026-07-02T00:00:00Z"},
-                    "source_scope": {
-                        "ncentral": {
-                            "base_url": "https://ncentral.example.com",
-                            "user_api_token": "token",
-                        }
+        with tempfile.TemporaryDirectory(prefix="ncentral-jwt-") as root:
+            token_path = write_jwt_token_file(Path(root))
+            with self.assertRaisesRegex(ValueError, "org_unit_id, customer_id, or site_id"):
+                resolve_ncentral_context(
+                    {
+                        "customer_id": "x",
+                        "customer_name": "X",
+                        "period": {"start": "2026-07-01T00:00:00Z", "end": "2026-07-02T00:00:00Z"},
+                        "source_scope": {
+                            "ncentral": {
+                                "base_url": "https://ncentral.example.com",
+                                "jwt_token_path": str(token_path),
+                            }
+                        },
                     },
-                },
-            )
+                )
 
     def test_scope_resolver_builds_customer_scope(self):
-        lookup_context = resolve_ncentral_lookup_context(build_lookup_context())
-        resolution = resolve_ncentral_scope_by_company(lookup_context, fetch_impl=create_fetch_mock(enable_resilience=False), sleep_impl=lambda _delay: None)
-        self.assertEqual(resolution["match_confidence"], "high")
-        self.assertEqual(resolution["resolved_scope"]["ncentral"]["customer_id"], 2001)
-        self.assertEqual(resolution["resolved_scope"]["ncentral"]["org_unit_id"], 2001)
-        self.assertEqual(resolution["resolved_scope"]["ncentral"]["site_ids"], [3001, 3002])
+        with tempfile.TemporaryDirectory(prefix="ncentral-jwt-") as root:
+            token_path = write_jwt_token_file(Path(root))
+            lookup_context = resolve_ncentral_lookup_context(build_lookup_context(str(token_path)))
+            resolution = resolve_ncentral_scope_by_company(lookup_context, fetch_impl=create_fetch_mock(enable_resilience=False), sleep_impl=lambda _delay: None)
+            self.assertEqual(resolution["match_confidence"], "high")
+            self.assertEqual(resolution["resolved_scope"]["ncentral"]["customer_id"], 2001)
+            self.assertEqual(resolution["resolved_scope"]["ncentral"]["org_unit_id"], 2001)
+            self.assertEqual(resolution["resolved_scope"]["ncentral"]["site_ids"], [3001, 3002])
 
     def test_pipeline_handles_refresh_and_rate_limit(self):
-        context = resolve_ncentral_context(
-            build_direct_context(),
-            now=datetime(2026, 8, 1, 10, 0, tzinfo=timezone.utc),
-        )
-        result = run_ncentral_pipeline(
-            context,
-            fetch_impl=create_fetch_mock(enable_resilience=True),
-            sleep_impl=lambda _delay: None,
-        )
-        self.assertEqual(result["snapshot"]["dataset"], "ncentral_snapshot")
-        self.assertEqual(result["snapshot"]["inventory"]["devices"]["count_collected"], 3)
-        self.assertEqual(result["snapshot"]["active_issues"]["count_collected"], 2)
-        self.assertEqual(result["normalized"]["dataset"], "ncentral_normalized")
-        self.assertEqual(result["normalized"]["totals"]["devices"], 3)
-        self.assertEqual(result["normalized"]["totals"]["impacted_devices"], 2)
-        self.assertEqual(result["inventory_summary"]["summary_kpis"]["stale_checkin_devices"], 1)
-        self.assertEqual(result["issue_summary"]["summary_kpis"]["critical_issues"], 1)
-        self.assertEqual(result["device_health"]["impacted_device_count"], 2)
-        self.assertEqual(result["bundle"]["dataset"], "ncentral_report_bundle")
-        self.assertEqual(result["bundle"]["sections"]["source_inventory_summary"]["devices"], 3)
-        self.assertEqual(result["snapshot"]["collection_log"]["rate_limit_retries"], 1)
-        self.assertEqual(result["snapshot"]["collection_log"]["auth_refreshes"], 1)
+        with tempfile.TemporaryDirectory(prefix="ncentral-jwt-") as root:
+            token_path = write_jwt_token_file(Path(root), token="jwt-1")
+            context = resolve_ncentral_context(
+                build_direct_context(str(token_path)),
+                now=datetime(2026, 8, 1, 10, 0, tzinfo=timezone.utc),
+            )
+            fetch_impl = create_fetch_mock(enable_resilience=True, token_path=token_path)
+            result = run_ncentral_pipeline(
+                context,
+                fetch_impl=fetch_impl,
+                sleep_impl=lambda _delay: None,
+            )
+            self.assertEqual(result["snapshot"]["dataset"], "ncentral_snapshot")
+            self.assertEqual(result["snapshot"]["inventory"]["devices"]["count_collected"], 3)
+            self.assertEqual(result["snapshot"]["active_issues"]["count_collected"], 2)
+            self.assertEqual(result["normalized"]["dataset"], "ncentral_normalized")
+            self.assertEqual(result["normalized"]["totals"]["devices"], 3)
+            self.assertEqual(result["normalized"]["totals"]["impacted_devices"], 2)
+            self.assertEqual(result["inventory_summary"]["summary_kpis"]["stale_checkin_devices"], 1)
+            self.assertEqual(result["issue_summary"]["summary_kpis"]["critical_issues"], 1)
+            self.assertEqual(result["device_health"]["impacted_device_count"], 2)
+            self.assertEqual(result["bundle"]["dataset"], "ncentral_report_bundle")
+            self.assertEqual(result["bundle"]["sections"]["source_inventory_summary"]["devices"], 3)
+            self.assertEqual(result["snapshot"]["collection_log"]["rate_limit_retries"], 1)
+            self.assertEqual(result["snapshot"]["collection_log"]["auth_refreshes"], 1)
+            self.assertIn("Bearer jwt-2", fetch_impl.state["seen_authorization_headers"])
 
     def test_cli_steps_write_expected_files(self):
-        context = resolve_ncentral_context(
-            build_direct_context(),
-            now=datetime(2026, 8, 1, 10, 0, tzinfo=timezone.utc),
-        )
-        pipeline = run_ncentral_pipeline(
-            context,
-            fetch_impl=create_fetch_mock(enable_resilience=False),
-            sleep_impl=lambda _delay: None,
-        )
         with tempfile.TemporaryDirectory(prefix="fleet-ncentral-scripts-") as root:
             root_path = Path(root)
+            token_path = write_jwt_token_file(root_path)
+            context = resolve_ncentral_context(
+                build_direct_context(str(token_path)),
+                now=datetime(2026, 8, 1, 10, 0, tzinfo=timezone.utc),
+            )
+            pipeline = run_ncentral_pipeline(
+                context,
+                fetch_impl=create_fetch_mock(enable_resilience=False),
+                sleep_impl=lambda _delay: None,
+            )
             context_path = root_path / "customer_context.json"
             run_dir = root_path / "run"
-            context_path.write_text(f"{json.dumps(build_direct_context(), indent=2)}\n", encoding="utf-8")
+            context_path.write_text(f"{json.dumps(build_direct_context(str(token_path)), indent=2)}\n", encoding="utf-8")
             run_paths = resolve_run_paths(run_dir)
             Path(run_paths["ncentral_snapshot_file"]).parent.mkdir(parents=True, exist_ok=True)
             Path(run_paths["ncentral_snapshot_file"]).write_text(

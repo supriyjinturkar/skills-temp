@@ -21,10 +21,11 @@ Use it when one report needs to bring together multiple sources such as:
 - Adapt the report to the customer, the reporting month, and the data actually available.
 - Do not force every suggested module, visual, or metric into every report.
 - Use it as a standalone report-making guide when no other Nexon report-writing skill is attached.
+- When the chosen output is HTML, pair this skill with the shared report shell at `/skills/nexon-brand/assets/html-template.html` so report differences come from tabs, sections, and evidence rather than a new layout each time.
 
 ## Use this skill for
 
-- interrogating source bundles before drafting — identifying signal vs. noise
+- interrogating source bundles before drafting - identifying signal vs. noise
 - producing the Report Blueprint before any section is written
 - deciding what a combined monthly report should contain
 - choosing which modules belong in the main body versus appendix
@@ -94,41 +95,41 @@ Use it when one report needs to bring together multiple sources such as:
 
 ## Combined report behavior
 
-### Before drafting — Data Interrogation
+### Before drafting - Data Interrogation
 
 Before writing a single section, perform a full interrogation of every source bundle.
 
-For each source, read every individual section file — not only the merged bundle:
+For each source, read every individual section file - not only the merged bundle:
 
 **ServiceNow section files to read:**
-- `sn_ticket_summary` — total tickets, class split, opened vs closed
-- `sn_incident_summary` — incident volume, priority breakdown
-- `sn_request_summary` — request volume, category breakdown
-- `sn_change_summary` — change count, risk, outcomes
-- `sn_problem_summary` — open problems, recurring patterns
-- `sn_sla_summary` — response and resolution SLA percentages, breach counts
-- `sn_sla_trends` — month-by-month SLA trend data
-- `sn_aged_backlog` — aged open tickets by priority and age bucket
-- `sn_dimensions` — top callers, categories, assignment groups
-- `sn_fcr` — first-contact resolution rate
-- `sn_critical_incidents` — P1/P2 incident details
+- `sn_ticket_summary` - total tickets, class split, opened vs closed
+- `sn_incident_summary` - incident volume, priority breakdown
+- `sn_request_summary` - request volume, category breakdown
+- `sn_change_summary` - change count, risk, outcomes
+- `sn_problem_summary` - open problems, recurring patterns
+- `sn_sla_summary` - response and resolution SLA percentages, breach counts
+- `sn_sla_trends` - month-by-month SLA trend data
+- `sn_aged_backlog` - aged open tickets by priority and age bucket
+- `sn_dimensions` - top callers, categories, assignment groups
+- `sn_fcr` - first-contact resolution rate
+- `sn_critical_incidents` - P1/P2 incident details
 
 **LogicMonitor section files to read:**
-- `availability_summary` — overall availability posture
-- `alert_trends` — alert volume by severity and period
-- `resource_health` — unhealthy and critical resources
-- `monitoring_coverage` — coverage summary and gaps
-- `website_experience` — website/service availability where configured
-- `device_availability` — per-device availability breakdown
-- `cpu_memory_utilization` — top CPU and memory consumers
-- `disk_capacity_utilization` — disk capacity hotspots
-- `network_interface_throughput` — top network consumers
-- `inventory_exceptions` — devices with monitoring exceptions
+- `availability_summary` - overall availability posture
+- `alert_trends` - alert volume by severity and period
+- `resource_health` - unhealthy and critical resources
+- `monitoring_coverage` - coverage summary and gaps
+- `website_experience` - website/service availability where configured
+- `device_availability` - per-device availability breakdown
+- `cpu_memory_utilization` - top CPU and memory consumers
+- `disk_capacity_utilization` - disk capacity hotspots
+- `network_interface_throughput` - top network consumers
+- `inventory_exceptions` - devices with monitoring exceptions
 
 **BackupRadar section files to read:**
-- `backup_summary` — success rate, protected jobs, protected devices
-- `backup_trends` — job outcome trend by period
-- `backup_exceptions` — failed, warning, and pending job details
+- `backup_summary` - success rate, protected jobs, protected devices
+- `backup_trends` - job outcome trend by period
+- `backup_exceptions` - failed, warning, and pending job details
 
 For each section file, note:
 - is it populated or empty?
@@ -136,18 +137,18 @@ For each section file, note:
 - does it have enough data for a chart, or only a KPI card, or is it too sparse?
 - is any metric anomalous against prior period data if available?
 
-Identify the 3–5 strongest operational signals for this customer this month. A signal must be either:
+Identify the 3-5 strongest operational signals for this customer this month. A signal must be either:
 - materially better or worse than expected or prior period
 - a risk that deserves customer attention
 - a result that should drive a customer action or watch item
 
 Write a structured Data Signal Report to `run/data_signal_report.json` before moving to the blueprint.
 
-### Before drafting — Report Blueprint
+### Before drafting - Report Blueprint
 
 After interrogation, write a Report Blueprint to `run/report_blueprint.json`.
 
-The blueprint is the explicit decision record for the report. Every section in the final report must trace back to the blueprint. Every non-empty source section must appear in `sections`, `excluded_sections`, or `appendix_sections` — no silent omissions.
+The blueprint is the explicit decision record for the report. Every section in the final report must trace back to the blueprint. Every non-empty source section must appear in `sections`, `excluded_sections`, or `appendix_sections` - no silent omissions.
 
 For each included section, write the `lead_message` before drafting starts. The lead message forces you to know what the section is saying before you write it.
 
@@ -230,7 +231,7 @@ Use this table to decide the right chart type when data is available:
 | Category breakdown | Stacked bar or horizontal bar |
 | Top-N ranking | Horizontal bar chart |
 | Posture summary | KPI cards |
-| Simple composition (≤5 categories) | Donut chart |
+| Simple composition (<=5 categories) | Donut chart |
 | Mixed operational status | RAG summary table |
 | Long exception detail | Detail table in appendix |
 
@@ -252,3 +253,12 @@ This skill should support edits such as:
 - rewrite commentary so it sounds customer-facing and operationally grounded
 - add methodology notes and caveats where the data interpretation would otherwise be misleading
 - produce a Data Signal Report and Report Blueprint when starting from scratch
+
+## HTML-specific note
+
+When the report is delivered as HTML:
+
+- use the shared shell at `/skills/nexon-brand/assets/html-template.html`
+- preserve the shell's typography, spacing, tab pattern, and footer treatment
+- vary the report by changing tabs, panels, visuals, commentary, and appendix notes to match the blueprint
+- do not redesign the page just because this month's sections differ from the last report

@@ -8,6 +8,17 @@
 
 Treat these as patterns to borrow from, not fixed outlines to fill in mechanically.
 
+## Mandatory shell starting point
+
+- Start Nexon customer reports from `/skills/nexon-brand/assets/html-template.html`.
+- Keep the shell stable across reports:
+  - fixed black header with embedded logo
+  - hero block with title, subtitle, and meta chips
+  - sticky tab bar for long reports
+  - shared page width, card system, chart wrappers, tables, commentary blocks, and footer
+- Adapt the report by changing tab labels, tab panels, section blocks, charts, tables, and appendix notes.
+- Do not rebuild the page from scratch unless the report type genuinely does not fit the report template.
+
 ## Common report structures
 
 ### Monthly service review
@@ -58,6 +69,7 @@ A service intelligence report often works well with some version of this sequenc
 - Missing ownership in action sections
 - Decorative layout changes between sections
 - Client-facing reports that depend on CDN-only rendering for core meaning
+- Replacing the shared report shell with a new layout when only the content differs
 
 ## Chart guidance
 
@@ -91,6 +103,7 @@ Prefer wording like:
 - Stronger drafts convert risk into named priorities for the next month.
 - Strategic reports go beyond symptoms and explain recurring root causes.
 - The best reports do not pretend missing data exists.
+- Report differences should show up primarily in content, not in wholesale typography or layout changes.
 
 These are quality signals, not mandatory artifacts. If a report can achieve the same clarity another way, prefer the clearer result.
 
@@ -100,3 +113,4 @@ These are quality signals, not mandatory artifacts. If a report can achieve the 
 - Test the report without network assumptions when possible.
 - Avoid making the chart library a single point of failure for understanding the page.
 - Keep HTML and CSS readable enough that another agent can revise them quickly.
+- If JavaScript fails, the active panel should still be readable and the report should still make sense.

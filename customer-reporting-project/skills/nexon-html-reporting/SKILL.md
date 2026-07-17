@@ -1,6 +1,6 @@
 ---
 name: nexon-html-reporting
-description: Create, review, or upgrade HTML-based service reports, monthly reviews, operational dashboards, or strategic reporting pages, especially when turning collected ServiceNow, LogicMonitor, BackupRadar, or similar managed-service data into branded, evidence-led Nexon-style HTML deliverables. Use when the task involves generating the report itself and the skill should provide flexible guidance on structure, narrative, visuals, caveats, and client readiness for `.html` reports.
+description: Create, review, or upgrade HTML-based service reports, monthly reviews, operational dashboards, or strategic reporting pages, especially when turning collected ServiceNow, LogicMonitor, BackupRadar, N-central, or similar managed-service data into branded, evidence-led Nexon-style HTML deliverables. Use when the task involves generating the report itself and the skill should provide flexible guidance on structure, narrative, visuals, caveats, and client readiness for `.html` reports.
 ---
 
 # HTML Reporting
@@ -15,11 +15,15 @@ Treat this skill as guidance, not a rigid template. Use it to shape good decisio
 
 - Read `references/authoring-patterns.md` when building or restructuring an HTML report.
 - Read `references/review-checklist.md` when reviewing a draft, scoring quality, or tightening a Fleet-generated report.
+- Read `/skills/nexon-brand/assets/html-template.html` before drafting a report shell. Use it as the default starting point for Nexon HTML reports.
 
 ## How to use this skill
 
 - Do not start rendering HTML until the Data Signal Report and Report Blueprint exist. Read `nexon-combined-monthly-report/references/data-interrogation-and-blueprint.md` for how to produce them.
 - Generate the report based on the user request, source data, and the Report Blueprint.
+- Start from the shared Nexon HTML template at `/skills/nexon-brand/assets/html-template.html` unless the user explicitly requires a different shell.
+- Keep the template's visual language intact: fixed header, hero, sticky tabs, content rhythm, cards, chart blocks, tables, footer, and appendix treatment.
+- Change the report by replacing customer identity, tab labels, section panels, visuals, tables, and commentary - not by inventing a new layout for each run.
 - Use this skill as a set of guidelines and patterns, not as a mandatory sequence.
 - Borrow the parts that help: report family selection, section rhythm, chart and table choices, source and caveat wording, and QA heuristics.
 - Skip or adapt any pattern that does not fit the report.
@@ -33,7 +37,8 @@ Treat this skill as guidance, not a rigid template. Use it to shape good decisio
 4. Choose the report family.
    A monthly service review usually fits period-bound service desk, infrastructure, backup, action, and data-scope reporting. A service intelligence or strategy report usually fits cross-period themes, recurring causes, automation opportunities, and multi-quarter recommendations.
 5. Build the shell before filling details.
-   Start with the broad structure, navigation, and component system so the page has a deliberate visual rhythm.
+   Start from `/skills/nexon-brand/assets/html-template.html`, then adapt its tabs and panels to the active blueprint.
+   Keep the overall shell stable across reports so typography, spacing, footer treatment, and navigation remain recognisably Nexon.
    If the report uses tabs, make them real in-page section controls that reveal the active panel on click. Do not implement tabs as plain anchor links to sections that are all rendered in one long scroll.
 6. For each section in the blueprint, read the named individual section files and render the section using the specified `visual_type` and `lead_message`.
 7. Write evidence-led sections.
@@ -60,11 +65,14 @@ Use this flow when it helps, but do not force the report into it if a better sha
 - Never hide uncertainty. If a trend is unavailable, say so. If a reporting window spans multiple months, say so. If a metric covers only a subset of devices or tickets, say so.
 - Every section in the HTML must trace back to a blueprint section. Do not add sections that are not in the blueprint without updating the blueprint first.
 - Every chart in the report must use the `visual_type` specified in the blueprint for that section, or must have a documented reason for the change.
+- When producing a Nexon customer report, preserve the shared template shell unless the request explicitly requires a materially different page type.
 
 These are guardrails, not a narrow spec. The report should still feel authored, context-aware, and purpose-built.
 
 ## Nexon-oriented expectations
 
+- Use the shared template at `/skills/nexon-brand/assets/html-template.html` as the default shell for customer-facing HTML reports.
+- Treat tabs, section titles, content blocks, and appendix notes as variable; treat typography, spacing, colour tokens, and component rhythm as stable.
 - Use bright, presentation-style layouts rather than dark dashboards unless the existing report family requires otherwise.
 - Favor `Inter`, `Arial`, or similarly clean sans-serif typography already seen in the reporting set.
 - Use Nexon-like semantic accents consistently, with blue for primary emphasis, green for healthy status, amber for caution, and red for breach, outage, or risk.
@@ -82,4 +90,5 @@ A strong HTML report should be:
 - traceable back to data sources and windows
 - explicit about missing or partial data
 - strong enough to hand to a client without apologizing for it
-- consistent with the Report Blueprint — every included section is present, every excluded section is absent
+- consistent with the Report Blueprint - every included section is present, every excluded section is absent
+- consistent with the shared Nexon HTML template unless a documented reason requires divergence

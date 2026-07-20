@@ -1,9 +1,6 @@
 ---
 name: nexon-brand
-description: Use when creating or styling any Nexon-branded output - HTML pages,
-  Word documents, PowerPoint presentations, emails, dashboards, or reports.
-  Apply this skill whenever branding, design consistency, colours, logos, fonts,
-  or layout are relevant to the task.
+description: Use when creating or styling any Nexon-branded output - HTML pages, Word documents, PowerPoint presentations, emails, dashboards, or reports. Apply this skill whenever branding, design consistency, colours, logos, fonts, or layout are relevant to the task.
 ---
 
 # Nexon Brand Skill
@@ -12,14 +9,18 @@ This skill ensures every artefact you produce is on-brand for Nexon. Always appl
 
 ## Logo
 
-The official logo is a **white wordmark on a black background** PNG. It lives at:
+The canonical logo source is the Base64 payload stored at:
 ```
-/skills/nexon-brand/assets/nexon-logo-black-bg.png
+/skills/nexon-brand/assets/logo-base64-data-uri.txt
 ```
 
-> Note: 
-- For HTML reports, html template already have image element with src as logo's base64. So, use it directly.
-- For PPT reports, use the nexon-logo-black-bg.png. Before using it, make sure the png image file is not corrupted, doesnt have incorrect headers, etc.
+The official rendered asset is a **white wordmark on a black background** PNG.
+
+> Note:
+- Treat `logo-base64-data-uri.txt` as the source of truth for the logo Base64 payload.
+- For HTML reports, prefer the shared template's existing Base64 logo `src` when it is already present. Only fall back to `logo-base64-data-uri.txt` when the template does not already contain the logo data URI. If you need to inject the payload into an existing `data:image/png;base64,` prefix, add only the file contents.
+- For PPTX, DOCX, or any workflow that requires an image file, decode `logo-base64-data-uri.txt` and create a fresh PNG file before inserting it. Use binary-safe reads/writes only, and verify the generated file is a valid PNG.
+- If an existing `nexon-logo-black-bg.png` is present, treat it as a convenience copy only after verifying it matches the official asset and is not corrupted.
 
 **Rules (strict):**
 - Place the logo on every page/slide - no exceptions.
@@ -123,6 +124,7 @@ Full style reference -> see `assets/word-guide.md`.
 ## Pre-Delivery Checklist
 
 Before finalising any branded output verify:
+- [ ] HTML uses the template's existing Base64 logo `src`, or falls back to `/skills/nexon-brand/assets/logo-base64-data-uri.txt` if needed
 - [ ] Official PNG logo used and placed on every page/slide
 - [ ] Colours match official palette - no off-brand values
 - [ ] CTA buttons are Wildcard green (`#00c982`)

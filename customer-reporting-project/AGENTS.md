@@ -41,7 +41,7 @@ Every report you produce must meet this bar before delivery:
 - `ncentral-data-collection` — for N-central endpoint management and infrastructure data (device inventory, active issues, custom properties, site rollup)
 - `nexon-combined-monthly-report` — for combined-report structure, module choice, visuals, metrics, commentary quality, report-readiness guidance, Data Interrogation procedure, and Report Blueprint procedure
 - `nexon-html-reporting` — for HTML report rendering, layout, and structure conventions
-- `nexon-brand` — for creating or styling any Nexon-branded output (HTML, PPTX, WORD)
+- `nexon-brand` — for creating or styling any Nexon-branded output (HTML, PPTX, WORD). For HTML, prefer the shared template's existing Base64 logo `src` and only fall back to `/skills/nexon-brand/assets/logo-base64-data-uri.txt` when needed; when a workflow needs an image file, decode the payload and create a fresh PNG with binary-safe reads/writes.
 - `report-rendering-and-validation` — for PPTX generation rules, logo binary safety, validation pipeline hand-off detail, review and delivery rules, and expected outputs per run. **Load at step 13 (before first render).**
 - `reporting-data-validation` sub-agent — for validating metrics, factual claims, scope labels, and data-backed commentary with no unsupported reasoning or hypotheses
 - `reporting-editorial-validation` sub-agent — for coverage, editorial judgment, visualisation appropriateness, and story coherence
@@ -78,6 +78,15 @@ Attach the source and delivery tools needed for the active report flow, for exam
 15. If SDM review is required, send the review handoff only after all three validation passes are complete.
 16. Support revision requests without re-collecting source data unless a true data gap is confirmed.
 17. Finalize and deliver the approved artifact.
+
+
+## Brand asset rule
+
+- Treat `/skills/nexon-brand/assets/logo-base64-data-uri.txt` as the source of truth for the Nexon logo.
+- For HTML outputs, use the template's existing Base64 logo `src` when it is already present.
+- Only if the template does not already contain the logo data URI, load the payload from `/skills/nexon-brand/assets/logo-base64-data-uri.txt`. If the template already contains `data:image/png;base64,`, inject only the payload.
+- For PPTX, DOCX, or any other output that requires an image file, decode that payload and create a new PNG file before insertion.
+- Do not rely on a pre-existing logo PNG unless it has been verified against the official asset and confirmed to be uncorrupted.
 
 
 ## Data Interrogation phase — mandatory rules

@@ -77,7 +77,7 @@ Minimum direct-collection context when scope is already known:
 
 ## Authentication
 
-The collector reads a bearer JWT from the sandbox-local token file.
+The collector reads a JWT from the sandbox-local token file and uses it only to authenticate.
 
 Provide configuration in either the context or the environment:
 
@@ -88,7 +88,7 @@ By default, the collector reads the token from:
 
 - `/opt/ncentral/NCENTRAL_JWT_TOKEN`
 
-Do not place the raw JWT in the run context. The collector reads the token text file directly and reloads it from disk if an API call returns `401` or `403`.
+Do not place the raw JWT in the run context. The collector reads the token text file directly, exchanges that JWT through `POST /api/auth/authenticate`, uses the returned access token for subsequent API calls, and re-authenticates with the JWT again if the access token expires or an API call returns `401` or `403`.
 
 ## Standard flow
 
@@ -180,7 +180,8 @@ The report bundle is optimized for infrastructure posture reporting rather than 
 ## Production guardrails
 
 - Collection is customer-scoped or site-scoped by default. Do not use tenant-wide collection as a normal report path.
-- The collector reloads the JWT from disk on `401`/`403` responses and retries transient failures, including `429` rate-limit responses.
+- The collector never uses the JWT as the bearer token for inventory or reporting endpoints. It exchanges the JWT for an access token first, then re-authenticates with the JWT when that access token expires or is rejected with `401`/`403`.
+- The collector retries transient failures, including `429` rate-limit responses.
 - The collector respects the documented N-central endpoint concurrency limits:
   - `GET /api/org-units/{orgUnitId}/active-issues`: max `3`
   - `GET /api/customers`, `GET /api/sites`, `GET /api/org-units/{orgUnitId}/devices`, `GET /api/org-units/{orgUnitId}/custom-properties`, `GET /api/devices/{deviceId}/custom-properties`: max `5`

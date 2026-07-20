@@ -191,7 +191,7 @@ For N-central:
 - the resulting bundle at `run/normalized/ncentral_report_bundle.json` is the canonical section map for N-central-backed report coverage
 - reuse the resulting bundle for device inventory, active issues, infrastructure posture, and endpoint management sections
 - the default base URL is `https://ncentral.nexon.com.au`; override via `source_scope.ncentral.base_url` or the `NCENTRAL_BASE_URL` env var if needed
-- authentication uses the JWT token file at `/opt/ncentral/NCENTRAL_JWT_TOKEN`; do not place token text in the run context, and override the path only through `source_scope.ncentral.jwt_token_path` or `NCENTRAL_JWT_TOKEN_PATH` when needed
+- authentication uses the JWT token file at `/opt/ncentral/NCENTRAL_JWT_TOKEN` only to obtain an access token; do not place token text in the run context, and override the path only through `source_scope.ncentral.jwt_token_path` or `NCENTRAL_JWT_TOKEN_PATH` when needed
 
 
 ## Guardrails

@@ -15,7 +15,7 @@ if str(LIB_DIR) not in sys.path:
 
 from nc_context import parse_cli_args, resolve_ncentral_context, resolve_ncentral_lookup_context
 from nc_io import resolve_run_paths
-from nc_pipeline import resolve_ncentral_scope_by_company, run_ncentral_pipeline
+from nc_pipeline import NCentralApi, resolve_ncentral_scope_by_company, run_ncentral_pipeline
 
 
 def write_jwt_token_file(root: Path, token: str = "jwt-1") -> Path:
@@ -76,6 +76,9 @@ def create_fetch_mock(enable_resilience: bool, token_path: Path | None = None):
         "devices_401_emitted": False,
         "root_429_emitted": False,
         "seen_authorization_headers": [],
+        "seen_authenticate_headers": [],
+        "seen_api_authorization_headers": [],
+        "authenticate_call_count": 0,
     }
 
     def paged(items):
@@ -186,6 +189,27 @@ def create_fetch_mock(enable_resilience: bool, token_path: Path | None = None):
         auth = headers.get("Authorization", "")
         state["seen_authorization_headers"].append(auth)
 
+        if path.endswith("/api/auth/authenticate"):
+            state["seen_authenticate_headers"].append(auth)
+            state["authenticate_call_count"] += 1
+            if auth == "Bearer jwt-1":
+                return 200, {}, json.dumps(
+                    {
+                        "accessToken": f"access-{state['authenticate_call_count']}",
+                        "accessTokenExpiresIn": 300,
+                    }
+                )
+            if auth == "Bearer jwt-2":
+                return 200, {}, json.dumps(
+                    {
+                        "accessToken": "access-2",
+                        "accessTokenExpiresIn": 300,
+                    }
+                )
+            return 401, {}, json.dumps({"message": "invalid jwt"})
+
+        state["seen_api_authorization_headers"].append(auth)
+
         if path.endswith("/api/service-orgs/1001/customers") or path.endswith("/api/customers"):
             return 200, {}, json.dumps(paged(customers))
 
@@ -196,7 +220,7 @@ def create_fetch_mock(enable_resilience: bool, token_path: Path | None = None):
             return 200, {}, json.dumps(paged(sites))
 
         if path.endswith("/api/org-units/2001/devices"):
-            if enable_resilience and auth == "Bearer jwt-1" and not state["devices_401_emitted"]:
+            if enable_resilience and auth == "Bearer access-1" and not state["devices_401_emitted"]:
                 state["devices_401_emitted"] = True
                 if token_path is not None:
                     token_path.write_text("jwt-2\n", encoding="utf-8")
@@ -300,7 +324,24 @@ class NCentralFleetScriptsTest(unittest.TestCase):
             self.assertEqual(result["bundle"]["sections"]["source_inventory_summary"]["devices"], 3)
             self.assertEqual(result["snapshot"]["collection_log"]["rate_limit_retries"], 1)
             self.assertEqual(result["snapshot"]["collection_log"]["auth_refreshes"], 1)
-            self.assertIn("Bearer jwt-2", fetch_impl.state["seen_authorization_headers"])
+            self.assertIn("Bearer jwt-2", fetch_impl.state["seen_authenticate_headers"])
+            self.assertIn("Bearer access-1", fetch_impl.state["seen_api_authorization_headers"])
+            self.assertIn("Bearer access-2", fetch_impl.state["seen_api_authorization_headers"])
+
+    def test_expired_access_token_is_reauthenticated_with_jwt(self):
+        with tempfile.TemporaryDirectory(prefix="ncentral-jwt-") as root:
+            token_path = write_jwt_token_file(Path(root), token="jwt-1")
+            context = resolve_ncentral_lookup_context(build_lookup_context(str(token_path)))
+            api = NCentralApi(context["ncentral"], fetch_impl=create_fetch_mock(enable_resilience=False), sleep_impl=lambda _delay: None)
+            first = api.list_customers(service_org_id=1001)
+            api.access_token_expires_at = 0.0
+            second = api.list_customers(service_org_id=1001)
+            self.assertEqual(first["count_collected"], 2)
+            self.assertEqual(second["count_collected"], 2)
+            self.assertEqual(api.diagnostics["auth_refreshes"], 1)
+            self.assertEqual(api.fetch_impl.state["seen_authenticate_headers"], ["Bearer jwt-1", "Bearer jwt-1"])
+            self.assertIn("Bearer access-1", api.fetch_impl.state["seen_api_authorization_headers"])
+            self.assertIn("Bearer access-2", api.fetch_impl.state["seen_api_authorization_headers"])
 
     def test_cli_steps_write_expected_files(self):
         with tempfile.TemporaryDirectory(prefix="fleet-ncentral-scripts-") as root:

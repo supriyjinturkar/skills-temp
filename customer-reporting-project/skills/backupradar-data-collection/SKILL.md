@@ -22,6 +22,7 @@ This skill packages the Python collection pipeline that a Fleet agent can run in
 - `scripts/normalize_backupradar_collection.py`
 - `scripts/build_backupradar_report_bundle.py`
 - `scripts/run_backupradar_report_pipeline.py`
+- `scripts/summarize_backupradar_bundle.py`
 
 ## Required run inputs
 
@@ -188,6 +189,21 @@ python3 skills/backupradar-data-collection/scripts/build_backupradar_report_bund
 - `run/normalized/backupradar_report_bundle.json`
 
 For downstream drafting, treat `backupradar_report_bundle.json.sections` as the canonical section map for BackupRadar-backed report coverage.
+
+## Compact inspection helper
+
+After normalization/bundling, prefer the compact summary helper over verbose inline inspection commands:
+
+```bash
+python3 skills/backupradar-data-collection/scripts/summarize_backupradar_bundle.py \
+  --run-dir /path/to/run
+```
+
+Default output:
+
+- `run/evidence/backupradar_compact_summary.json`
+
+This helper writes a small artifact with bundle metadata, section presence, and compact per-section metrics so later prompt turns can inspect BackupRadar outputs without replaying large JSON dumps.
 
 ## Resource-path note
 

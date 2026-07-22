@@ -88,6 +88,7 @@ The official rendered asset is a **white wordmark on a black background** PNG.
    - keep the header, hero, sticky tab bar, page width, footer treatment, and component classes
    - replace tabs, panels, metrics, charts, tables, commentary, and appendix notes to match the active report
    - preserve the typography, spacing rhythm, and colour system even when section names or data sources change
+   - do not replace the shell with a different layout for another monthly run that still uses the same approved template
 8. If a report does not need a module shown in the template, remove the whole module cleanly rather than restyling the page into a different visual language.
 
 Full HTML boilerplate -> see `assets/html-template.html`.

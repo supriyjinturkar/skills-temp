@@ -6,7 +6,7 @@
 - upgrading a weak draft into a client-ready report
 - choosing between a summary-style page and a richer reporting product
 
-Treat these as patterns to borrow from, not fixed outlines to fill in mechanically.
+Treat section content and sequencing as adaptable patterns, but treat the shared Nexon HTML shell as fixed unless another approved shell is explicitly requested.
 
 ## Mandatory shell starting point
 
@@ -18,6 +18,7 @@ Treat these as patterns to borrow from, not fixed outlines to fill in mechanical
   - shared page width, card system, chart wrappers, tables, commentary blocks, and footer
 - Adapt the report by changing tab labels, tab panels, section blocks, charts, tables, and appendix notes.
 - Do not rebuild the page from scratch unless the report type genuinely does not fit the report template.
+- A change in source mix, customer theme, or monthly message does not justify a new layout.
 
 ## Common report structures
 
@@ -50,8 +51,8 @@ A service intelligence report often works well with some version of this sequenc
 
 - Fixed brand header with compact metadata
 - Hero block with period, audience, and purpose
-- Sticky tab bar or compact section navigation for longer reports
-- When using tabs, treat them as content toggles, not anchors. Clicking a tab should open that section's panel and keep non-active tab panels hidden rather than jumping the reader to another point in a fully expanded page.
+- Sticky tab bar for customer-facing reports
+- Treat tabs as content toggles, not anchors. Clicking a tab should open that section's panel and keep non-active tab panels hidden rather than jumping the reader to another point in a fully expanded page.
 - KPI cards for top-line metrics
 - Alert or callout boxes for urgent items
 - Source banners for per-system sections

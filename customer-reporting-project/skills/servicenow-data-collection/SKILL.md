@@ -24,6 +24,7 @@ The MCP tools (`lookup_customer__nexon_csi_` and `get_customer_data__nexon_csi_`
 - `scripts/normalize_servicenow_collection.py`
 - `scripts/build_servicenow_report_bundle.py`
 - `scripts/run_servicenow_report_pipeline.py`
+- `scripts/summarize_servicenow_bundle.py`
 
 ## Required run inputs
 
@@ -185,6 +186,21 @@ python3 skills/servicenow-data-collection/scripts/run_servicenow_report_pipeline
 
 For downstream drafting, treat `servicenow_report_bundle.json.sections` as the canonical section map.
 The bundle also keeps the legacy top-level section keys for backward compatibility.
+
+## Compact inspection helper
+
+After normalization/bundling, prefer the compact summary helper over large inline data dumps:
+
+```bash
+python3 skills/servicenow-data-collection/scripts/summarize_servicenow_bundle.py \
+  --run-dir /path/to/run
+```
+
+Default output:
+
+- `run/evidence/servicenow_compact_summary.json`
+
+This helper writes a small artifact with bundle metadata, section presence, and compact per-section metrics so later steps can inspect ServiceNow outputs without replaying bulky JSON into prompt history.
 
 ## Data coverage
 

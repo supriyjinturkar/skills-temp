@@ -23,6 +23,7 @@ This skill folder is the authoritative implementation path for the Fleet N-centr
 - `scripts/normalize_ncentral_collection.py`
 - `scripts/build_ncentral_report_bundle.py`
 - `scripts/run_ncentral_report_pipeline.py`
+- `scripts/summarize_ncentral_bundle.py`
 
 ## Required run inputs
 
@@ -38,11 +39,6 @@ Minimum unresolved context when only the company name is known:
     "start": "2026-07-01T00:00:00Z",
     "end": "2026-07-31T23:59:59Z",
     "label": "July 2026"
-  },
-  "source_scope": {
-    "ncentral": {
-      "base_url": "https://ncentral.example.com"
-    }
   }
 }
 ```
@@ -62,7 +58,6 @@ Minimum direct-collection context when scope is already known:
   },
   "source_scope": {
     "ncentral": {
-      "base_url": "https://ncentral.example.com",
       "customer_id": 2001,
       "customer_name": "Customer A",
       "org_unit_id": 2001,
@@ -83,6 +78,8 @@ Provide configuration in either the context or the environment:
 
 - `source_scope.ncentral.base_url` or `NCENTRAL_BASE_URL`
 - `source_scope.ncentral.jwt_token_path` or `NCENTRAL_JWT_TOKEN_PATH`
+
+The base URL defaults to `https://ncentral.nexon.com.au` and only needs to be set when using a different N-central endpoint.
 
 By default, the collector reads the token from:
 
@@ -118,7 +115,7 @@ Expected resolver payload shape:
 {
   "resolved_scope": {
     "ncentral": {
-      "base_url": "https://ncentral.example.com",
+      "base_url": "https://ncentral.nexon.com.au",
       "customer_id": 2001,
       "customer_name": "Customer A",
       "org_unit_id": 2001,
@@ -164,6 +161,21 @@ python3 skills/ncentral-data-collection/scripts/build_ncentral_report_bundle.py 
 - `run/normalized/ncentral_report_bundle.json`
 
 For downstream drafting, treat `ncentral_report_bundle.json.sections` as the canonical section map for N-central-backed report coverage.
+
+## Compact inspection helper
+
+After normalization/bundling, prefer the compact summary helper over verbose inline inspection commands:
+
+```bash
+python3 skills/ncentral-data-collection/scripts/summarize_ncentral_bundle.py \
+  --run-dir /path/to/run
+```
+
+Default output:
+
+- `run/evidence/ncentral_compact_summary.json`
+
+This helper writes a small artifact with bundle metadata, section presence, and compact per-section metrics so later prompt turns can inspect N-central outputs without replaying large JSON dumps.
 
 ## Data coverage
 

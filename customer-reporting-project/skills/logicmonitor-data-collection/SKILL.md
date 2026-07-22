@@ -23,6 +23,7 @@ This skill folder is the authoritative implementation path for the Fleet LogicMo
 - `scripts/normalize_logicmonitor_collection.py`
 - `scripts/build_logicmonitor_report_bundle.py`
 - `scripts/run_logicmonitor_report_pipeline.py`
+- `scripts/summarize_logicmonitor_bundle.py`
 
 ## Required run inputs
 
@@ -176,6 +177,21 @@ python3 skills/logicmonitor-data-collection/scripts/build_logicmonitor_report_bu
 - `run/normalized/logicmonitor_report_bundle.json`
 
 For downstream drafting, treat `logicmonitor_report_bundle.json.sections` as the canonical section map for LogicMonitor-backed report coverage.
+
+## Compact inspection helper
+
+After collection/bundling, prefer the compact summary helper over ad hoc inline inspection commands:
+
+```bash
+python3 skills/logicmonitor-data-collection/scripts/summarize_logicmonitor_bundle.py \
+  --run-dir /path/to/run
+```
+
+Default output:
+
+- `run/evidence/logicmonitor_compact_summary.json`
+
+This helper creates a small summary artifact listing bundle metadata, section presence, and compact per-section metrics so later prompt turns do not need to replay large JSON dumps.
 
 ## Device collection behaviour — recursive sub-group traversal
 

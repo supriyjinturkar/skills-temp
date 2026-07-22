@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -13,7 +14,12 @@ LIB_DIR = CURRENT_DIR / "lib"
 if str(LIB_DIR) not in sys.path:
     sys.path.insert(0, str(LIB_DIR))
 
-from nc_context import parse_cli_args, resolve_ncentral_context, resolve_ncentral_lookup_context
+from nc_context import (
+    DEFAULT_NCENTRAL_BASE_URL,
+    parse_cli_args,
+    resolve_ncentral_context,
+    resolve_ncentral_lookup_context,
+)
 from nc_io import resolve_run_paths
 from nc_pipeline import NCentralApi, resolve_ncentral_scope_by_company, run_ncentral_pipeline
 
@@ -287,6 +293,51 @@ class NCentralFleetScriptsTest(unittest.TestCase):
                         },
                     },
                 )
+
+    def test_context_defaults_base_url(self):
+        with tempfile.TemporaryDirectory(prefix="ncentral-jwt-") as root:
+            token_path = write_jwt_token_file(Path(root))
+            context = resolve_ncentral_lookup_context(
+                {
+                    "company_name": "Customer A",
+                    "customer_name": "Customer A",
+                    "period": {"start": "2026-07-01T00:00:00Z", "end": "2026-07-31T23:59:59Z"},
+                    "source_scope": {
+                        "ncentral": {
+                            "jwt_token_path": str(token_path),
+                            "service_org_id": 1001,
+                        }
+                    },
+                },
+            )
+            self.assertEqual(context["ncentral"]["base_url"], DEFAULT_NCENTRAL_BASE_URL)
+
+    def test_context_scope_base_url_overrides_env(self):
+        with tempfile.TemporaryDirectory(prefix="ncentral-jwt-") as root:
+            token_path = write_jwt_token_file(Path(root))
+            previous = os.environ.get("NCENTRAL_BASE_URL")
+            os.environ["NCENTRAL_BASE_URL"] = "https://ncentral.env.example.com"
+            try:
+                context = resolve_ncentral_lookup_context(
+                    {
+                        "company_name": "Customer A",
+                        "customer_name": "Customer A",
+                        "period": {"start": "2026-07-01T00:00:00Z", "end": "2026-07-31T23:59:59Z"},
+                        "source_scope": {
+                            "ncentral": {
+                                "base_url": "https://ncentral.scope.example.com",
+                                "jwt_token_path": str(token_path),
+                                "service_org_id": 1001,
+                            }
+                        },
+                    },
+                )
+            finally:
+                if previous is None:
+                    os.environ.pop("NCENTRAL_BASE_URL", None)
+                else:
+                    os.environ["NCENTRAL_BASE_URL"] = previous
+            self.assertEqual(context["ncentral"]["base_url"], "https://ncentral.scope.example.com")
 
     def test_scope_resolver_builds_customer_scope(self):
         with tempfile.TemporaryDirectory(prefix="ncentral-jwt-") as root:

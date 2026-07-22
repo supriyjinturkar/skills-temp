@@ -9,6 +9,7 @@ from nc_io import read_json_file
 
 
 DEFAULT_NCENTRAL_JWT_TOKEN_PATH = "/opt/ncentral/NCENTRAL_JWT_TOKEN"
+DEFAULT_NCENTRAL_BASE_URL = "https://ncentral.nexon.com.au"
 
 
 def _to_iso(value: str, field_name: str) -> str:
@@ -127,7 +128,7 @@ def _resolve_ncentral_base_context(raw_context: dict, now: datetime | None = Non
     period_label = _build_period_label(start_iso, end_iso, raw_period.get("label"))
     raw_scope = (raw_context.get("source_scope") or {}).get("ncentral") or raw_context.get("ncentral") or {}
 
-    base_url = str(raw_scope.get("base_url") or os.getenv("NCENTRAL_BASE_URL") or "").strip()
+    base_url = str(raw_scope.get("base_url") or os.getenv("NCENTRAL_BASE_URL") or DEFAULT_NCENTRAL_BASE_URL).strip()
     jwt_token_path = str(
         raw_scope.get("jwt_token_path")
         or os.getenv("NCENTRAL_JWT_TOKEN_PATH")
@@ -196,9 +197,6 @@ def _resolve_ncentral_base_context(raw_context: dict, now: datetime | None = Non
         "fetch_site_active_issues": raw_scope.get("fetch_site_active_issues") is not False,
         "stale_checkin_hours": _parse_positive_int(raw_scope.get("stale_checkin_hours"), 72, "stale_checkin_hours"),
     }
-
-    if not scope["base_url"]:
-        raise ValueError("source_scope.ncentral.base_url or NCENTRAL_BASE_URL is required.")
 
     start_dt = datetime.fromisoformat(start_iso.replace("Z", "+00:00"))
     end_dt = datetime.fromisoformat(end_iso.replace("Z", "+00:00"))

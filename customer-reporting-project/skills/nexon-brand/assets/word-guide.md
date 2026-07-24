@@ -76,7 +76,7 @@ header = doc.sections[0].header
 header_para = header.paragraphs[0]
 header_para.alignment = WD_ALIGN_PARAGRAPH.LEFT
 run = header_para.add_run()
-run.add_picture('nexon-logo-black-bg.png', width=Cm(3.5))  # ~100px equivalent
+run.add_picture('logo.png', width=Cm(3.5))  # ~100px equivalent
 
 # Add bottom border (thin black rule) to header paragraph
 pPr = header_para._p.get_or_add_pPr()

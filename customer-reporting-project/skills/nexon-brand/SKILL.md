@@ -9,25 +9,25 @@ This skill ensures every artefact you produce is on-brand for Nexon. Always appl
 
 ## Logo
 
-The canonical logo source is the Base64 payload stored at:
+The canonical logo sources are:
 ```
-/skills/nexon-brand/assets/logo-base64-data-uri.txt
+/skills/nexon-brand/assets/logo.svg
+/skills/nexon-brand/assets/logo.png
 ```
 
-The official rendered asset is a **white wordmark on a black background** PNG.
+The official rendered asset is a **white wordmark on a black background**.
 
 > Note:
-- Treat `logo-base64-data-uri.txt` as the source of truth for the logo Base64 payload.
-- For HTML reports, prefer the shared template's existing Base64 logo `src` when it is already present. Only fall back to `logo-base64-data-uri.txt` when the template does not already contain the logo data URI. If you need to inject the payload into an existing `data:image/png;base64,` prefix, add only the file contents.
-- For PPTX, DOCX, or any workflow that requires an image file, decode `logo-base64-data-uri.txt` and create a fresh PNG file before inserting it. Use binary-safe reads/writes only, and verify the generated file is a valid PNG.
-- If an existing `nexon-logo-black-bg.png` is present, treat it as a convenience copy only after verifying it matches the official asset and is not corrupted.
+- For HTML, the shared `assets/html-template.html` already includes the SVG logo treatment. Reuse that template rather than re-embedding the logo yourself.
+- Use `logo.png` for PPTX, DOCX, or any workflow that requires a raster image.
+- In Fleet sandbox runs, the copied `/skills/nexon-brand/assets/logo.png` can arrive corrupted because it is copied as UTF text instead of binary. In that case, open that copied file as text, decode the Base64 content it contains, and write out a valid PNG before inserting it. Follow the pptx-guide.md for png decode.
 
 **Rules (strict):**
 - Place the logo on every page/slide - no exceptions.
 - Never recreate, type, or approximate the wordmark. Never stretch, rotate, or add effects.
 - Minimum size: 100px wide. Clear space = height of the "x" on all sides.
 - Never place on secondary palette colours (Bluetooth blue, Encrypt red, Gateway yellow, Wildcard green).
-- HTML: embed as a Base64 data URI in the fixed black header, and repeat at `opacity: 0.35` in the footer.
+- HTML: use the shared inline SVG logo already present in `assets/html-template.html` for the fixed black header and the `opacity: 0.35` footer treatment.
 - PPTX: top-left corner of every slide.
 - DOCX: left-aligned in the page header above a thin black rule.
 
@@ -80,7 +80,7 @@ The official rendered asset is a **white wordmark on a black background** PNG.
 
 1. Import Inter from Google Fonts.
 2. Set CSS custom properties from the palette.
-3. Fixed black header (64px) with logo left-aligned, embedded as Base64 data URI.
+3. Fixed black header (64px) with logo left-aligned, using the SVG already included in `assets/html-template.html`.
 4. Body background: `var(--nexon-satellite)`.
 5. Footer: logo at `opacity: 0.35`, black background.
 6. For report-style HTML, start from `assets/html-template.html` instead of a blank page.
@@ -125,7 +125,7 @@ Full style reference -> see `assets/word-guide.md`.
 ## Pre-Delivery Checklist
 
 Before finalising any branded output verify:
-- [ ] HTML uses the template's existing Base64 logo `src`, or falls back to `/skills/nexon-brand/assets/logo-base64-data-uri.txt` if needed
+- [ ] HTML reuses the SVG logo treatment already included in `assets/html-template.html`
 - [ ] Official PNG logo used and placed on every page/slide
 - [ ] Colours match official palette - no off-brand values
 - [ ] CTA buttons are Wildcard green (`#00c982`)

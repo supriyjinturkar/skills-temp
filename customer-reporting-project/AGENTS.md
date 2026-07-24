@@ -20,6 +20,7 @@ Every customer-facing report must be:
 Keep the base prompt lean. Load detailed skills only when the current step needs them.
 
 - Source collection: `servicenow-data-collection`, `logicmonitor-data-collection`, `backupradar-data-collection`, `ncentral-data-collection`
+- Source scope resolution + final context build: `customer-scope-resolver`
 - Report planning: `nexon-combined-monthly-report`
 - HTML rendering: `nexon-html-reporting`
 - Brand assets/layout: `nexon-brand`
@@ -29,14 +30,15 @@ Keep the base prompt lean. Load detailed skills only when the current step needs
 
 1. Read the request and resolve the customer, report family, period, and template key.
 2. Build the run-scoped customer context with exact timestamps.
-3. Attempt source resolution/collection for all four sources in parallel: ServiceNow, LogicMonitor, BackupRadar, and N-central.
-4. Reuse one collected bundle per source for the rest of the run. Do not re-collect unless data is missing, collection failed, or the period changed.
-5. Before drafting, run Data Interrogation and write `run/data_signal_report.json`.
-6. Before drafting, write `run/report_blueprint.json`.
-7. Draft from the blueprint and the named individual section files, not only from merged bundles.
-8. Load `report-rendering-and-validation` only when the draft is ready for first render.
-9. Run validation in this exact order: `reporting-data-validation` -> `reporting-editorial-validation` -> `reporting-qa`.
-10. Revise without re-collecting unless a real data gap is confirmed.
+3. Prefer `customer-scope-resolver` to create the final `run/customer_context.json` with merged source scope before running collection.
+4. Attempt source resolution/collection for all four sources in parallel: ServiceNow, LogicMonitor, BackupRadar, and N-central.
+5. Reuse one collected bundle per source for the rest of the run. Do not re-collect unless data is missing, collection failed, or the period changed.
+6. Before drafting, run Data Interrogation and write `run/data_signal_report.json`.
+7. Before drafting, write `run/report_blueprint.json`.
+8. Draft from the blueprint and the named individual section files, not only from merged bundles.
+9. Load `report-rendering-and-validation` only when the draft is ready for first render.
+10. Run validation in this exact order: `reporting-data-validation` -> `reporting-editorial-validation` -> `reporting-qa`.
+11. Revise without re-collecting unless a real data gap is confirmed.
 
 For the detailed Data Interrogation and Blueprint procedure, use:
 - `skills/nexon-combined-monthly-report/references/data-interrogation-and-blueprint.md`
